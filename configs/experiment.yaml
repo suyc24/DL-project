@@ -1,0 +1,59 @@
+seed: 20260501
+
+dataset:
+  hf_name: EleutherAI/hendrycks_math
+  subjects:
+    algebra:
+      levels: [5]
+      max_problems: 1000
+    number_theory:
+      levels: [5]
+      max_problems: 1000
+    precalculus:
+      levels: [5]
+      max_problems: 1000
+    intermediate_algebra:
+      levels: [5]
+      max_problems: 1000
+  target_total: 1000
+
+model:
+  name: Qwen/Qwen3-4B-Instruct-2507
+  enable_thinking: false
+  tensor_parallel_size: 1
+  dtype: auto
+  gpu_memory_utilization: 0.90
+  max_model_len: 16384
+  attention_backend: TRITON_ATTN
+  layers: [8, 17, 26, 35]
+
+generation:
+  # vLLM treats temperature=0 as greedy sampling; greedy mode supports n=1 only.
+  temperature: 0.0
+  top_p: 0.95
+  n_samples_per_problem: 1
+  max_new_tokens: 8192
+  logprobs: 5
+
+labels:
+  annotator_model: gpt-5.5
+  keep_confidence: high
+  max_traces: null
+
+split:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+probe:
+  kind: logistic
+  max_iter: 2000
+  class_weight: balanced
+
+paths:
+  problems: data/math_subset.jsonl
+  generated_traces: data/generated_traces.jsonl
+  labels: data/fhis_labels.jsonl
+  hidden_states: data/step_hidden_states.pt
+  metrics: results/probe_metrics.json
+  layer_sweep: results/layer_sweep.csv
