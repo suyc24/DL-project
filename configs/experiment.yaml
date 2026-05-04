@@ -5,17 +5,17 @@ dataset:
   subjects:
     algebra:
       levels: [5]
-      max_problems: 1000
+      max_problems: 100000
     number_theory:
       levels: [5]
-      max_problems: 1000
+      max_problems: 100000
     precalculus:
       levels: [5]
-      max_problems: 1000
+      max_problems: 100000
     intermediate_algebra:
       levels: [5]
-      max_problems: 1000
-  target_total: 1000
+      max_problems: 100000
+  target_total: 100000
 
 model:
   name: Qwen/Qwen3-4B-Instruct-2507

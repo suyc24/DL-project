@@ -34,3 +34,13 @@ Final Answer: 2
     assert [step.index for step in steps] == [1, 2]
     assert "discriminant" in steps[0].text
     assert "quadratic" in steps[1].text
+
+
+def test_paragraph_fallback_only_inside_think() -> None:
+    text = """First compute the discriminant.
+
+Then solve the resulting quadratic equation.
+
+Final Answer: 2
+"""
+    assert extract_steps(text) == []

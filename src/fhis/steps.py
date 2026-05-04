@@ -28,7 +28,7 @@ def extract_steps(text: str) -> list[StepSpan]:
         full_end = match.end()
         steps.append(
             StepSpan(
-                index=int(match.group(1)),
+                index=len(steps) + 1,
                 text=match.group(2).strip(),
                 start_char=full_start,
                 end_char=full_end,
@@ -36,17 +36,17 @@ def extract_steps(text: str) -> list[StepSpan]:
         )
     if steps:
         return steps
-    return extract_paragraph_steps(text)
+    if THINK_RE.search(text):
+        return extract_paragraph_steps(text)
+    return []
 
 
 def extract_paragraph_steps(text: str) -> list[StepSpan]:
     match = THINK_RE.search(text)
-    if match:
-        body_start = match.start(1)
-        body = match.group(1)
-    else:
-        body_start = 0
-        body = text
+    if not match:
+        return []
+    body_start = match.start(1)
+    body = match.group(1)
 
     steps: list[StepSpan] = []
     for paragraph_match in re.finditer(r"(?:^|\n\s*\n)([^\S\n]*\S.*?)(?=\n\s*\n|\Z)", body, flags=re.S):
