@@ -35,36 +35,36 @@
 
 ## 3. 当前产物
 
-生成和训练产物位于 `data_generation/` 下。大文件已经被 `data_generation/.gitignore` 排除，不进入 git commit。
+生成和训练产物都收拢在 `data_generation/qwen25_fhis/` 下。大文件已经被 bundle 内的 `.gitignore` 排除，不进入 git commit。
 
 | 路径 | 内容 | 当前规模 |
 |---|---|---:|
-| `data_generation/outputs/problems.jsonl` | 采样到的 200 道原题 | ignored |
-| `data_generation/outputs/generated_traces.jsonl` | 800 条模型推理 trace | 约 21 MB |
-| `data_generation/outputs/summary.json` | 生成统计 | ignored |
-| `data_generation/labels/fhis_labels.jsonl` | 本地 Codex FHIS 全量标注 | 约 848 KB |
-| `data_generation/labels/fhis_labels_train_high.jsonl` | 高置信度训练标签 | ignored |
-| `data_generation/features/step_hidden_states.pt` | step hidden state features | 约 136 MB |
-| `data_generation/results/probe_metrics.json` | probe 训练评估结果 | ignored |
-| `data_generation/results/layer_sweep.csv` | 单层 hidden state probe sweep | ignored |
+| `data_generation/qwen25_fhis/outputs/problems.jsonl` | 采样到的 200 道原题 | ignored |
+| `data_generation/qwen25_fhis/outputs/generated_traces.jsonl` | 800 条模型推理 trace | 约 21 MB |
+| `data_generation/qwen25_fhis/outputs/summary.json` | 生成统计 | ignored |
+| `data_generation/qwen25_fhis/labels/fhis_labels.jsonl` | 本地 Codex FHIS 全量标注 | 约 848 KB |
+| `data_generation/qwen25_fhis/labels/fhis_labels_train_high.jsonl` | 高置信度训练标签 | ignored |
+| `data_generation/qwen25_fhis/features/step_hidden_states.pt` | step hidden state features | 约 136 MB |
+| `data_generation/qwen25_fhis/results/probe_metrics.json` | probe 训练评估结果 | ignored |
+| `data_generation/qwen25_fhis/results/layer_sweep.csv` | 单层 hidden state probe sweep | ignored |
 
 代码、配置和 schema 会进入 git：
 
 | 路径 | 用途 |
 |---|---|
-| `data_generation/generate_olympiadbench_traces.py` | 生成 OlympiadBench traces |
-| `data_generation/label_with_local_codex.py` | 调用本地 Codex 做 FHIS 标注 |
-| `data_generation/local_codex_label_schema.json` | Codex 标注 JSON schema |
-| `data_generation/filter_fhis_labels_for_training.py` | 筛选可训练的高置信度标签 |
-| `data_generation/summarize_fhis_labels.py` | 汇总标注分布 |
-| `data_generation/recommended_config.yaml` | trace 生成配置 |
-| `data_generation/qwen25_probe_config.yaml` | hidden state 和 probe 配置 |
+| `data_generation/qwen25_fhis/scripts/generate_olympiadbench_traces.py` | 生成 OlympiadBench traces |
+| `data_generation/qwen25_fhis/scripts/label_with_local_codex.py` | 调用本地 Codex 做 FHIS 标注 |
+| `data_generation/qwen25_fhis/schema/local_codex_label_schema.json` | Codex 标注 JSON schema |
+| `data_generation/qwen25_fhis/scripts/filter_fhis_labels_for_training.py` | 筛选可训练的高置信度标签 |
+| `data_generation/qwen25_fhis/scripts/summarize_fhis_labels.py` | 汇总标注分布 |
+| `data_generation/qwen25_fhis/configs/recommended.yaml` | trace 生成配置 |
+| `data_generation/qwen25_fhis/configs/probe.yaml` | hidden state 和 probe 配置 |
 
-当前 probe v0 的单独报告见 `docs/qwen25_probe_v0.md`。
+当前 probe v0 的单独报告见 `data_generation/qwen25_fhis/docs/probe_v0.md`。
 
 ## 4. 生成统计
 
-`data_generation/outputs/summary.json` 当前结果：
+`data_generation/qwen25_fhis/outputs/summary.json` 当前结果：
 
 | 指标 | 数值 |
 |---|---:|
@@ -123,7 +123,7 @@ proxy = 127.0.0.1:7890
 hidden states 已保存：
 
 ```text
-data_generation/features/step_hidden_states.pt
+data_generation/qwen25_fhis/features/step_hidden_states.pt
 ```
 
 提取设置：
@@ -186,48 +186,48 @@ export ALL_PROXY=socks5://127.0.0.1:7890
 生成 traces：
 
 ```bash
-conda run -n fhis-data-gen python data_generation/generate_olympiadbench_traces.py \
-  --config data_generation/recommended_config.yaml \
+conda run -n fhis-data-gen python data_generation/qwen25_fhis/scripts/generate_olympiadbench_traces.py \
+  --config data_generation/qwen25_fhis/configs/recommended.yaml \
   --resume
 ```
 
 本地 Codex 标注：
 
 ```bash
-conda run -n fhis-data-gen python data_generation/label_with_local_codex.py \
-  --traces data_generation/outputs/generated_traces.jsonl \
-  --output data_generation/labels/fhis_labels.jsonl \
-  --schema data_generation/local_codex_label_schema.json \
+conda run -n fhis-data-gen python data_generation/qwen25_fhis/scripts/label_with_local_codex.py \
+  --traces data_generation/qwen25_fhis/outputs/generated_traces.jsonl \
+  --output data_generation/qwen25_fhis/labels/fhis_labels.jsonl \
+  --schema data_generation/qwen25_fhis/schema/local_codex_label_schema.json \
   --resume
 ```
 
 筛选训练标签：
 
 ```bash
-conda run -n fhis-data-gen python data_generation/filter_fhis_labels_for_training.py \
-  --input data_generation/labels/fhis_labels.jsonl \
-  --output data_generation/labels/fhis_labels_train_high.jsonl
+conda run -n fhis-data-gen python data_generation/qwen25_fhis/scripts/filter_fhis_labels_for_training.py \
+  --input data_generation/qwen25_fhis/labels/fhis_labels.jsonl \
+  --output data_generation/qwen25_fhis/labels/fhis_labels_train_high.jsonl
 ```
 
 提取 hidden states：
 
 ```bash
 conda run -n fhis-data-gen python -m fhis.extract_hidden_states_transformers \
-  --config data_generation/qwen25_probe_config.yaml
+  --config data_generation/qwen25_fhis/configs/probe.yaml
 ```
 
 训练 probe：
 
 ```bash
 conda run -n fhis-data-gen python -m fhis.train_probe \
-  --config data_generation/qwen25_probe_config.yaml
+  --config data_generation/qwen25_fhis/configs/probe.yaml
 ```
 
 查看标注摘要：
 
 ```bash
-conda run -n fhis-data-gen python data_generation/summarize_fhis_labels.py \
-  --labels data_generation/labels/fhis_labels.jsonl
+conda run -n fhis-data-gen python data_generation/qwen25_fhis/scripts/summarize_fhis_labels.py \
+  --labels data_generation/qwen25_fhis/labels/fhis_labels.jsonl
 ```
 
 ## 9. 质量边界

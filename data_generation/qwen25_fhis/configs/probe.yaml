@@ -1,0 +1,33 @@
+seed: 20260505
+
+model:
+  name: Qwen/Qwen2.5-Math-7B-Instruct
+  tensor_parallel_size: 1
+  dtype: auto
+  gpu_memory_utilization: 0.90
+  max_model_len: 4096
+  layers: [6, 13, 20, 27]
+
+labels:
+  annotator_model: gpt-5.5
+  keep_confidence: high
+  max_traces: null
+
+split:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+probe:
+  kind: logistic
+  max_iter: 2000
+  class_weight: balanced
+
+paths:
+  problems: data_generation/qwen25_fhis/outputs/problems.jsonl
+  generated_traces: data_generation/qwen25_fhis/outputs/generated_traces.jsonl
+  labels: data_generation/qwen25_fhis/labels/fhis_labels.jsonl
+  hidden_states: data_generation/qwen25_fhis/features/step_hidden_states.pt
+  metrics: data_generation/qwen25_fhis/results/probe_metrics.json
+  layer_sweep: data_generation/qwen25_fhis/results/layer_sweep.csv
+  probe_model: data_generation/qwen25_fhis/results/hidden_logistic_probe.joblib

@@ -8,7 +8,15 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+
+def find_repo_root(start: Path) -> Path:
+    for path in [start, *start.parents]:
+        if (path / "pyproject.toml").exists():
+            return path
+    raise RuntimeError(f"Could not find repository root from {start}")
+
+
+REPO_ROOT = find_repo_root(Path(__file__).resolve())
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -189,9 +197,15 @@ def label_is_structurally_valid(label: dict[str, Any]) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Label FHIS with local Codex CLI.")
-    parser.add_argument("--traces", default="data_generation/outputs/generated_traces.jsonl")
-    parser.add_argument("--output", default="data_generation/labels/fhis_labels.jsonl")
-    parser.add_argument("--schema", default="data_generation/local_codex_label_schema.json")
+    parser.add_argument(
+        "--traces",
+        default="data_generation/qwen25_fhis/outputs/generated_traces.jsonl",
+    )
+    parser.add_argument("--output", default="data_generation/qwen25_fhis/labels/fhis_labels.jsonl")
+    parser.add_argument(
+        "--schema",
+        default="data_generation/qwen25_fhis/schema/local_codex_label_schema.json",
+    )
     parser.add_argument("--model", default="gpt-5.5")
     parser.add_argument("--reasoning-effort", default="high")
     parser.add_argument("--limit", type=int, default=None)

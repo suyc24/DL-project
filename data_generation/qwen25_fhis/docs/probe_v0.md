@@ -37,7 +37,7 @@ correct trace:
 hidden state 文件：
 
 ```text
-data_generation/features/step_hidden_states.pt
+data_generation/qwen25_fhis/features/step_hidden_states.pt
 ```
 
 feature 设置：
@@ -63,23 +63,23 @@ LogisticRegression(max_iter=2000, class_weight="balanced", solver="lbfgs")
 配置文件：
 
 ```text
-data_generation/qwen25_probe_config.yaml
+data_generation/qwen25_fhis/configs/probe.yaml
 ```
 
 训练命令：
 
 ```bash
 conda run -n fhis-data-gen python -m fhis.train_probe \
-  --config data_generation/qwen25_probe_config.yaml
+  --config data_generation/qwen25_fhis/configs/probe.yaml
 ```
 
 训练后本地保存：
 
 ```text
-data_generation/results/hidden_logistic_probe.joblib
+data_generation/qwen25_fhis/results/hidden_logistic_probe.joblib
 ```
 
-这个文件在 `data_generation/results/` 下，默认不进入 git。git 中提交的是训练代码、配置和文档。
+这个文件在 `data_generation/qwen25_fhis/results/` 下，默认不进入 git。git 中提交的是训练代码、配置和文档。
 
 ## 4. 评估结果
 

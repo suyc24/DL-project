@@ -4,7 +4,7 @@ dataset:
   hf_name: Hothan/OlympiadBench
   subset: OE_TO_maths_en_COMP
   split: train
-  target_problems: 2
+  target_problems: 200
 
 model:
   name: Qwen/Qwen2.5-Math-7B-Instruct
@@ -18,13 +18,13 @@ model:
 generation:
   temperature: 0.7
   top_p: 0.95
-  n_samples_per_problem: 1
-  max_new_tokens: 512
+  n_samples_per_problem: 4
+  max_new_tokens: 3072
   logprobs: 5
   completion_prefix: "Step 1:"
 
 paths:
-  output_dir: data_generation/outputs_smoke
-  problems: data_generation/outputs_smoke/problems.jsonl
-  generated_traces: data_generation/outputs_smoke/generated_traces.jsonl
-  summary: data_generation/outputs_smoke/summary.json
+  output_dir: data_generation/qwen25_fhis/outputs
+  problems: data_generation/qwen25_fhis/outputs/problems.jsonl
+  generated_traces: data_generation/qwen25_fhis/outputs/generated_traces.jsonl
+  summary: data_generation/qwen25_fhis/outputs/summary.json

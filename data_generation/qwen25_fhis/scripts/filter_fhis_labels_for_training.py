@@ -39,9 +39,15 @@ def is_training_usable(label: dict[str, Any]) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Filter FHIS labels for probe training.")
-    parser.add_argument("--input", default="data_generation/labels/fhis_labels.jsonl")
-    parser.add_argument("--output", default="data_generation/labels/fhis_labels_train_high.jsonl")
-    parser.add_argument("--summary", default="data_generation/labels/fhis_labels_train_high_summary.json")
+    parser.add_argument("--input", default="data_generation/qwen25_fhis/labels/fhis_labels.jsonl")
+    parser.add_argument(
+        "--output",
+        default="data_generation/qwen25_fhis/labels/fhis_labels_train_high.jsonl",
+    )
+    parser.add_argument(
+        "--summary",
+        default="data_generation/qwen25_fhis/labels/fhis_labels_train_high_summary.json",
+    )
     args = parser.parse_args()
 
     rows = read_jsonl(args.input)
@@ -55,7 +61,10 @@ def main() -> None:
         "wrong_fhis_traces": sum(1 for row in usable if row.get("final_correct") is False),
         "excluded": len(rows) - len(usable),
     }
-    Path(args.summary).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    Path(args.summary).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 

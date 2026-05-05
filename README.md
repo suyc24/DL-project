@@ -59,6 +59,18 @@ pytest
 - `figures/recall_at_k.png`
 - `figures/top_budget_coverage.png`
 
+## Qwen2.5 FHIS Dataset Bundle
+
+The current Qwen2.5-Math/OlympiadBench FHIS dataset pipeline is kept in one
+bundle:
+
+```text
+data_generation/qwen25_fhis/
+```
+
+See `data_generation/qwen25_fhis/README.md` for the runnable commands and
+`data_generation/qwen25_fhis/docs/probe_v0.md` for the current probe result.
+
 ## Notes
 
 - Splits are problem-disjoint.

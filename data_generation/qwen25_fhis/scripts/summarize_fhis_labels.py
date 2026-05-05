@@ -35,8 +35,11 @@ def is_train_usable(row: dict[str, Any]) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize local Codex FHIS labels.")
-    parser.add_argument("--labels", default="data_generation/labels/fhis_labels.jsonl")
-    parser.add_argument("--output", default="data_generation/labels/fhis_label_summary.json")
+    parser.add_argument("--labels", default="data_generation/qwen25_fhis/labels/fhis_labels.jsonl")
+    parser.add_argument(
+        "--output",
+        default="data_generation/qwen25_fhis/labels/fhis_label_summary.json",
+    )
     args = parser.parse_args()
 
     rows = read_jsonl(args.labels)
@@ -65,7 +68,10 @@ def main() -> None:
         "rough_codex_final_correct_conflicts": len(conflict),
     }
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.output).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    Path(args.output).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 

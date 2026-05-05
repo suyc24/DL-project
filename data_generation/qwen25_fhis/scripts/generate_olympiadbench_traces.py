@@ -8,14 +8,27 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+
+def find_repo_root(start: Path) -> Path:
+    for path in [start, *start.parents]:
+        if (path / "pyproject.toml").exists():
+            return path
+    raise RuntimeError(f"Could not find repository root from {start}")
+
+
+REPO_ROOT = find_repo_root(Path(__file__).resolve())
 SRC_DIR = REPO_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from fhis.io import append_jsonl, read_jsonl, write_jsonl
-from fhis.prompting import apply_qwen_chat_template, build_user_prompt
-from fhis.steps import extract_final_answer, extract_steps, rough_answer_match, steps_as_dicts
+from fhis.io import append_jsonl, read_jsonl, write_jsonl  # noqa: E402
+from fhis.prompting import apply_qwen_chat_template, build_user_prompt  # noqa: E402
+from fhis.steps import (  # noqa: E402
+    extract_final_answer,
+    extract_steps,
+    rough_answer_match,
+    steps_as_dicts,
+)
 
 
 def load_yaml(path: str | Path) -> dict[str, Any]:
@@ -194,9 +207,9 @@ def summarize_traces(path: str | Path) -> dict[str, Any]:
 
 
 def generate_traces(config: dict[str, Any], problems: list[dict[str, Any]], resume: bool) -> None:
-    from vllm import LLM, SamplingParams
     from tqdm import tqdm
     from transformers import AutoTokenizer
+    from vllm import LLM, SamplingParams
 
     model_cfg = config["model"]
     gen_cfg = config["generation"]
@@ -271,7 +284,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate low-accuracy OlympiadBench CoT traces for AG-SFV."
     )
-    parser.add_argument("--config", default="data_generation/recommended_config.yaml")
+    parser.add_argument("--config", default="data_generation/qwen25_fhis/configs/recommended.yaml")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--generate-only", action="store_true")
@@ -298,7 +311,8 @@ def main() -> None:
     if traces_path.exists() and not args.resume:
         if not args.overwrite:
             raise SystemExit(
-                f"{traces_path} already exists. Use --resume to continue or --overwrite to replace it."
+                f"{traces_path} already exists. Use --resume to continue or "
+                "--overwrite to replace it."
             )
         traces_path.unlink()
 
