@@ -1,0 +1,30 @@
+seed: 20260505
+
+dataset:
+  hf_name: Hothan/OlympiadBench
+  subset: OE_TO_maths_en_COMP
+  split: train
+  target_problems: 2
+
+model:
+  name: Qwen/Qwen2.5-Math-7B-Instruct
+  tensor_parallel_size: 1
+  dtype: auto
+  gpu_memory_utilization: 0.90
+  max_model_len: 4096
+  enforce_eager: true
+  enable_thinking: true
+
+generation:
+  temperature: 0.7
+  top_p: 0.95
+  n_samples_per_problem: 1
+  max_new_tokens: 512
+  logprobs: 5
+  completion_prefix: "Step 1:"
+
+paths:
+  output_dir: data_generation/outputs_smoke
+  problems: data_generation/outputs_smoke/problems.jsonl
+  generated_traces: data_generation/outputs_smoke/generated_traces.jsonl
+  summary: data_generation/outputs_smoke/summary.json

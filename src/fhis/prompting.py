@@ -6,11 +6,13 @@ from typing import Any
 STEP_PROMPT = """Solve the problem carefully.
 
 Write your visible solution using this exact format.
+Start your answer with "Step 1:".
 Every reasoning paragraph must begin with "Step k:" where k is the step number.
 Each step should contain one main mathematical claim or computation.
 Do not merge multiple independent derivations into one step.
 Do not use bullet-only reasoning.
 Do not use markdown headings like "**Step 1:**".
+Do not write an introduction before Step 1.
 
 Step 1: [claim]. [reasoning/computation].
 Step 2: [claim]. [reasoning/computation].

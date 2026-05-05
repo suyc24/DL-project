@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "final_correct": {
+      "type": "boolean"
+    },
+    "first_invalid_step": {
+      "type": ["integer", "null"]
+    },
+    "error_type": {
+      "type": ["string", "null"]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    }
+  },
+  "required": [
+    "final_correct",
+    "first_invalid_step",
+    "error_type",
+    "reason",
+    "confidence"
+  ]
+}

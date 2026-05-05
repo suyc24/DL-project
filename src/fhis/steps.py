@@ -8,6 +8,9 @@ from typing import Any
 STEP_RE = re.compile(
     r"(?ms)(?:^|\n)\s*Step\s+(\d+)\s*:\s*(.*?)(?=(?:\n\s*Step\s+\d+\s*:)|(?:\n\s*Final Answer\s*:)|\Z)"
 )
+NUMBERED_STEP_RE = re.compile(
+    r"(?ms)(?:^|\n)\s*(\d+)[.)]\s+(.*?)(?=(?:\n\s*\d+[.)]\s+)|(?:\n\s*Final Answer\s*:)|\Z)"
+)
 THINK_RE = re.compile(r"(?is)<think>(.*?)(?:</think>|\Z)")
 FINAL_RE = re.compile(r"(?is)Final Answer\s*:\s*(.+?)(?:\n\s*\Z|\Z)")
 BOXED_RE = re.compile(r"\\boxed\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}")
@@ -38,7 +41,24 @@ def extract_steps(text: str) -> list[StepSpan]:
         return steps
     if THINK_RE.search(text):
         return extract_paragraph_steps(text)
-    return []
+    return extract_numbered_steps(text)
+
+
+def extract_numbered_steps(text: str) -> list[StepSpan]:
+    steps: list[StepSpan] = []
+    for match in NUMBERED_STEP_RE.finditer(text):
+        content = match.group(2).strip()
+        if not content:
+            continue
+        steps.append(
+            StepSpan(
+                index=len(steps) + 1,
+                text=content,
+                start_char=match.start(),
+                end_char=match.end(),
+            )
+        )
+    return steps
 
 
 def extract_paragraph_steps(text: str) -> list[StepSpan]:
@@ -49,14 +69,14 @@ def extract_paragraph_steps(text: str) -> list[StepSpan]:
     body = match.group(1)
 
     steps: list[StepSpan] = []
-    for paragraph_match in re.finditer(r"(?:^|\n\s*\n)([^\S\n]*\S.*?)(?=\n\s*\n|\Z)", body, flags=re.S):
-        paragraph = paragraph_match.group(1).strip()
+    for paragraph_match in re.finditer(r"\S.*?(?=\n\s*\n|\Z)", body, flags=re.S):
+        paragraph = paragraph_match.group(0).strip()
         if not paragraph:
             continue
         if paragraph.lower().startswith("final answer"):
             continue
-        start = body_start + paragraph_match.start(1)
-        end = body_start + paragraph_match.end(1)
+        start = body_start + paragraph_match.start()
+        end = body_start + paragraph_match.end()
         steps.append(
             StepSpan(
                 index=len(steps) + 1,
