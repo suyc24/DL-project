@@ -30,3 +30,4 @@ paths:
   hidden_states: data_generation/features/step_hidden_states.pt
   metrics: data_generation/results/probe_metrics.json
   layer_sweep: data_generation/results/layer_sweep.csv
+  probe_model: data_generation/results/hidden_logistic_probe.joblib

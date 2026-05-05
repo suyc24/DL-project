@@ -60,6 +60,8 @@
 | `data_generation/recommended_config.yaml` | trace 生成配置 |
 | `data_generation/qwen25_probe_config.yaml` | hidden state 和 probe 配置 |
 
+当前 probe v0 的单独报告见 `docs/qwen25_probe_v0.md`。
+
 ## 4. 生成统计
 
 `data_generation/outputs/summary.json` 当前结果：

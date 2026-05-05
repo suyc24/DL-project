@@ -6,6 +6,7 @@ import random
 from pathlib import Path
 from typing import Any
 
+import joblib
 import numpy as np
 import pandas as pd
 import torch
@@ -58,17 +59,14 @@ def finite_baseline(values: list[float]) -> np.ndarray:
     return arr
 
 
-def train_logistic_probe(
+def fit_logistic_probe(
     train_rows: list[dict[str, Any]],
-    test_rows: list[dict[str, Any]],
     config: dict[str, Any],
     feature_slice: slice | None = None,
-) -> np.ndarray:
+) -> Any:
     x_train = stack_features(train_rows)
-    x_test = stack_features(test_rows)
     if feature_slice is not None:
         x_train = x_train[:, feature_slice]
-        x_test = x_test[:, feature_slice]
     y_train = labels(train_rows)
     probe_cfg = config["probe"]
     clf = make_pipeline(
@@ -80,6 +78,19 @@ def train_logistic_probe(
         ),
     )
     clf.fit(x_train, y_train)
+    return clf
+
+
+def train_logistic_probe(
+    train_rows: list[dict[str, Any]],
+    test_rows: list[dict[str, Any]],
+    config: dict[str, Any],
+    feature_slice: slice | None = None,
+) -> np.ndarray:
+    clf = fit_logistic_probe(train_rows, config, feature_slice=feature_slice)
+    x_test = stack_features(test_rows)
+    if feature_slice is not None:
+        x_test = x_test[:, feature_slice]
     return clf.predict_proba(x_test)[:, 1]
 
 
@@ -93,7 +104,9 @@ def score_baselines(
     scores: dict[str, np.ndarray] = {
         "random": rng.random(len(test_rows)),
         "step_index": finite_baseline([row["baselines"]["step_index"] for row in test_rows]),
-        "step_length": finite_baseline([row["baselines"]["step_length_chars"] for row in test_rows]),
+        "step_length": finite_baseline(
+            [row["baselines"]["step_length_chars"] for row in test_rows]
+        ),
         "low_mean_token_logprob": -finite_baseline(
             [row["baselines"]["mean_token_logprob"] for row in test_rows]
         ),
@@ -149,12 +162,14 @@ def main() -> None:
     parser.add_argument("--features", default=None)
     parser.add_argument("--metrics-output", default=None)
     parser.add_argument("--layer-output", default=None)
+    parser.add_argument("--probe-output", default=None)
     args = parser.parse_args()
 
     config = load_config(args.config)
     features_path = args.features or config["paths"]["hidden_states"]
     metrics_path = Path(args.metrics_output or config["paths"]["metrics"])
     layer_path = Path(args.layer_output or config["paths"]["layer_sweep"])
+    probe_output = args.probe_output or config["paths"].get("probe_model")
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     layer_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -195,9 +210,31 @@ def main() -> None:
     sweep_rows = layer_sweep(train_rows, eval_rows, config)
     pd.DataFrame(sweep_rows).to_csv(layer_path, index=False)
 
+    if probe_output:
+        probe_path = Path(probe_output)
+        probe_path.parent.mkdir(parents=True, exist_ok=True)
+        probe = fit_logistic_probe(train_rows + val_rows, config)
+        joblib.dump(
+            {
+                "model": probe,
+                "feature_layers": rows[0]["layer_ids"] if rows else [],
+                "feature_dim": int(rows[0]["feature"].numel()) if rows else 0,
+                "trained_on": {
+                    "train_steps": len(train_rows),
+                    "val_steps": len(val_rows),
+                    "train_problems": len(splits["train"]),
+                    "val_problems": len(splits["val"]),
+                },
+                "config": config,
+            },
+            probe_path,
+        )
+
     print(json.dumps(metrics, indent=2))
     print(f"Wrote metrics to {metrics_path}")
     print(f"Wrote layer sweep to {layer_path}")
+    if probe_output:
+        print(f"Wrote probe model to {probe_output}")
 
 
 if __name__ == "__main__":
