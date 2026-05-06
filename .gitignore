@@ -19,3 +19,5 @@ figures/*.png
 *.safetensors
 *.log
 *.pid
+
+data_generation/stable_snapshots/
