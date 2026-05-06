@@ -32,6 +32,21 @@ def read_jsonl(path: str | Path) -> list[dict[str, Any]]:
     return rows
 
 
+def read_trace_ids(path: str | Path | None) -> set[str]:
+    if path is None:
+        return set()
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(p)
+    trace_ids: set[str] = set()
+    with p.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                trace_ids.add(line)
+    return trace_ids
+
+
 def append_jsonl(path: str | Path, row: dict[str, Any]) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -211,15 +226,28 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--include-unknown", action="store_true")
+    parser.add_argument(
+        "--trace-id",
+        action="append",
+        default=[],
+        help="Restrict labeling to this trace id. Can be passed multiple times.",
+    )
+    parser.add_argument(
+        "--trace-ids-file",
+        default=None,
+        help="Restrict labeling to newline-separated trace ids from this file.",
+    )
     parser.add_argument("--max-retries", type=int, default=2)
     parser.add_argument("--num-shards", type=int, default=1)
     parser.add_argument("--shard-index", type=int, default=0)
     args = parser.parse_args()
 
+    target_trace_ids = set(args.trace_id) | read_trace_ids(args.trace_ids_file)
     traces = [
         trace
         for idx, trace in enumerate(read_jsonl(args.traces))
         if is_training_candidate(trace, include_unknown=args.include_unknown)
+        and (not target_trace_ids or trace["trace_id"] in target_trace_ids)
         and idx % int(args.num_shards) == int(args.shard_index)
     ]
     if args.resume:

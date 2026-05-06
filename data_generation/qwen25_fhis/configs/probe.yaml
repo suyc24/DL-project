@@ -26,8 +26,8 @@ probe:
 paths:
   problems: data_generation/qwen25_fhis/outputs/problems.jsonl
   generated_traces: data_generation/qwen25_fhis/outputs/generated_traces.jsonl
-  labels: data_generation/qwen25_fhis/labels/fhis_labels.jsonl
-  hidden_states: data_generation/qwen25_fhis/features/step_hidden_states.pt
+  labels: data_generation/qwen25_fhis/labels/fhis_labels_train_high.jsonl
+  hidden_states: data_generation/qwen25_fhis/features/step_hidden_states_codex_clean.pt
   metrics: data_generation/qwen25_fhis/results/probe_metrics.json
   layer_sweep: data_generation/qwen25_fhis/results/layer_sweep.csv
   probe_model: data_generation/qwen25_fhis/results/hidden_logistic_probe.joblib

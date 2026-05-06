@@ -173,7 +173,7 @@ def main() -> None:
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     layer_path.parent.mkdir(parents=True, exist_ok=True)
 
-    payload = torch.load(features_path, map_location="cpu")
+    payload = torch.load(features_path, map_location="cpu", weights_only=False)
     rows = payload["rows"]
     split_cfg = config["split"]
     splits = split_problem_ids(
