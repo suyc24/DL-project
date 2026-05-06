@@ -283,7 +283,42 @@ Qwen2.5-Math-7B 的 step-boundary hidden states 对 FHIS 有强线性可探测�
 当前数据和 probe pipeline 成立，但跨数据集泛化仍需验证。
 ```
 
-## 9. 复现命令
+## 9. Cross-Dataset Holdout
+
+已完成一个小规模 MATH Level 5 holdout，用来初步测试从 OlympiadBench 训练出的 probe 是否能迁移到另一套题分布。
+
+配置：
+
+| 字段 | 值 |
+|---|---:|
+| dataset | `EleutherAI/hendrycks_math` |
+| subset | `math_level5` |
+| sampled problems | 30 |
+| generated traces | 60 |
+| Codex-labeled known traces | 55 |
+| Codex-clean eval traces | 48 |
+| wrong FHIS traces | 22 |
+| correct negative traces | 26 |
+| step rows | 197 |
+| positive FHIS rows | 22 |
+| negative rows | 175 |
+
+评估方式：不重新训练 probe，直接加载 OlympiadBench clean 数据训练出的 `hidden_logistic_probe.joblib`，在 MATH Level 5 holdout hidden states 上评估。
+
+结果：
+
+| 方法 | AUROC | AUPRC | recall@1 | recall@2 | top 30% budget coverage |
+|---|---:|---:|---:|---:|---:|
+| hidden logistic | 0.817 | 0.394 | 0.727 | 0.955 | 0.909 |
+| step length | 0.800 | 0.439 | 0.818 | 0.955 | 0.909 |
+| low mean token logprob | 0.755 | 0.261 | 0.636 | 0.773 | 0.682 |
+| step index | 0.423 | 0.185 | 1.000 | 1.000 | 1.000 |
+
+`step_index` 的 ranking coverage 在这个小 holdout 上为 1.0，是因为错误 trace 的候选集合只包含 FHIS 及其之前步骤，且部分题的 first invalid step 很靠后；因此该 baseline 不代表真实验证质量，只说明当前小样本的错误位置分布偏后。
+
+这个结果是正向但还不能作为强泛化结论：hidden probe 的 AUROC 仍较高，但 step length baseline 也非常强，且只有 22 条 wrong traces。下一步需要扩大 holdout，至少到几百条 wrong FHIS traces，再判断泛化。
+
+## 10. 复现命令
 
 推荐环境：
 
@@ -366,7 +401,7 @@ python data_generation/qwen25_fhis/scripts/summarize_fhis_labels.py \
   --labels data_generation/qwen25_fhis/labels/fhis_labels.jsonl
 ```
 
-## 10. 质量边界
+## 11. 质量边界
 
 当前数据已经可以直接训练第一版 probe，但还不是最终论文级数据：
 
@@ -376,19 +411,20 @@ python data_generation/qwen25_fhis/scripts/summarize_fhis_labels.py \
 - 正确 trace 被用作 negative；如果正确 trace 中存在无害绕路或可修复错误，当前 schema 不细分。
 - hidden states 来自同一个 frozen Qwen2.5 checkpoint；换模型后需要重新提取 hidden states，并通常重新训练 probe。
 - 当前评估仍是同一 OlympiadBench subset 内的 problem split，下一步需要跨数据集 holdout。
+- 当前 MATH Level 5 holdout 只是小样本 sanity check，不足以证明强泛化。
 
-## 11. 下一步
+## 12. 下一步
 
 优先级：
 
 1. 抽查 rough/Codex 冲突样本，尤其 `rough=True, Codex=False`。
-2. 加 Minerva Math holdout，测试跨数据集泛化。
+2. 扩大 MATH/Minerva holdout，测试跨数据集泛化。
 3. 保留当前 Qwen2.5 probe 作为 baseline，再考虑 Qwen3 或其它模型。
 4. 如果要接 Lean，只对 probe 排名前 30% 的候选 step 先做验证，以控制预算。
 
 扩容时仍必须按 `problem_id` split，不能按 step 或 trace 随机 split。同一道题的不同采样不能同时出现在 train 和 test。
 
-## 12. 参考
+## 13. 参考
 
 - Qwen2.5-Math Technical Report: https://arxiv.org/html/2409.12122
 - Qwen2.5-Math official blog: https://qwenlm.github.io/blog/qwen2.5-math/
