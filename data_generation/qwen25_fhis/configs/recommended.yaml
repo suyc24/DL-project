@@ -4,7 +4,7 @@ dataset:
   hf_name: Hothan/OlympiadBench
   subset: OE_TO_maths_en_COMP
   split: train
-  target_problems: 200
+  target_problems: 674
 
 model:
   name: Qwen/Qwen2.5-Math-7B-Instruct

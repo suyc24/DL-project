@@ -23,9 +23,9 @@
 | subset | `OE_TO_maths_en_COMP` |
 | 题型 | 英文、text-only、open-ended、competition math |
 | 生成模型 | `Qwen/Qwen2.5-Math-7B-Instruct` |
-| 题目数 | 200 |
+| 题目数 | 674 |
 | 每题采样数 | 4 |
-| 总 trace 数 | 800 |
+| 总 trace 数 | 2696 |
 | temperature | 0.7 |
 | top_p | 0.95 |
 | max_new_tokens | 3072 |
@@ -39,12 +39,12 @@
 
 | 路径 | 内容 | 当前规模 |
 |---|---|---:|
-| `data_generation/qwen25_fhis/outputs/problems.jsonl` | 采样到的 200 道原题 | ignored |
-| `data_generation/qwen25_fhis/outputs/generated_traces.jsonl` | 800 条模型推理 trace | 约 21 MB |
+| `data_generation/qwen25_fhis/outputs/problems.jsonl` | 采样到的 674 道原题 | ignored |
+| `data_generation/qwen25_fhis/outputs/generated_traces.jsonl` | 2696 条模型推理 trace | 约 74 MB |
 | `data_generation/qwen25_fhis/outputs/summary.json` | 生成统计 | ignored |
-| `data_generation/qwen25_fhis/labels/fhis_labels.jsonl` | 本地 Codex FHIS 全量标注 | 约 848 KB |
+| `data_generation/qwen25_fhis/labels/fhis_labels.jsonl` | 本地 Codex FHIS 全量标注 | 约 2.8 MB |
 | `data_generation/qwen25_fhis/labels/fhis_labels_train_high.jsonl` | 高置信度训练标签 | ignored |
-| `data_generation/qwen25_fhis/features/step_hidden_states.pt` | step hidden state features | 约 136 MB |
+| `data_generation/qwen25_fhis/features/step_hidden_states.pt` | step hidden state features | 约 523 MB |
 | `data_generation/qwen25_fhis/results/probe_metrics.json` | probe 训练评估结果 | ignored |
 | `data_generation/qwen25_fhis/results/layer_sweep.csv` | 单层 hidden state probe sweep | ignored |
 
@@ -68,12 +68,12 @@
 
 | 指标 | 数值 |
 |---|---:|
-| num_traces | 800 |
-| num_problems | 200 |
-| rough_correct | 326 |
-| rough_wrong | 376 |
-| rough_unknown | 98 |
-| rough_accuracy | 46.44% |
+| num_traces | 2696 |
+| num_problems | 674 |
+| rough_correct | 1110 |
+| rough_wrong | 1233 |
+| rough_unknown | 353 |
+| rough_accuracy | 47.38% |
 | step_parse_rate | 100% |
 
 `rough_unknown` 主要是未完成或无法可靠抽取最终答案的 trace，不作为第一版高质量训练标签使用。
@@ -105,16 +105,16 @@ proxy = 127.0.0.1:7890
 
 | 指标 | 数值 |
 |---|---:|
-| 已标注 completed traces | 702 |
-| final_correct = true | 354 |
-| final_correct = false | 348 |
-| high confidence | 697 |
-| medium confidence | 4 |
-| low confidence | 1 |
-| 高置信度训练样本 | 646 |
-| 正确 negative traces | 300 |
-| 错误 FHIS traces | 346 |
-| 排除样本 | 56 |
+| 已标注 completed traces | 2343 |
+| final_correct = true | 1130 |
+| final_correct = false | 1213 |
+| high confidence | 2306 |
+| medium confidence | 31 |
+| low confidence | 6 |
+| 高置信度训练样本 | 2140 |
+| 正确 negative traces | 937 |
+| 错误 FHIS traces | 1203 |
+| 排除样本 | 203 |
 
 排除逻辑包括：低置信度、未完成、最终答案和 trace 结构冲突、或 Codex 认为不适合直接训练 probe 的样本。
 
@@ -134,9 +134,9 @@ data_generation/qwen25_fhis/features/step_hidden_states.pt
 | layers | `[6, 13, 20, 27]` |
 | hidden size | 3584 |
 | 拼接后 feature dim | 14336 |
-| step rows | 2444 |
-| label 0 | 2098 |
-| label 1 | 346 |
+| step rows | 9438 |
+| label 0 | 8235 |
+| label 1 | 1203 |
 
 每个 step 的 feature 是在该 step 结束位置取选定层 hidden states 后拼接得到。第一版没有保存全 token hidden states，因为 probe 训练只需要 step boundary 表征，保存全 token 会让数据体积显著增大。
 
@@ -148,30 +148,30 @@ split：
 
 | split | problems | steps |
 |---|---:|---:|
-| train | 135 | 1662 |
-| val | 29 | 414 |
-| test | 29 | 368 |
+| train | 461 | 6641 |
+| val | 99 | 1400 |
+| test | 98 | 1397 |
 
 测试集结果：
 
 | 方法 | AUROC | AUPRC | top 30% budget coverage |
 |---|---:|---:|---:|
-| hidden logistic | 0.873 | 0.585 | 0.851 |
-| text tfidf logistic | 0.766 | 0.403 | 0.766 |
-| low mean token logprob | 0.757 | 0.252 | 0.681 |
-| step length | 0.794 | 0.388 | 0.723 |
-| random | 0.551 | 0.147 | 0.596 |
+| hidden logistic | 0.790 | 0.370 | 0.813 |
+| text tfidf logistic | 0.746 | 0.361 | 0.792 |
+| low mean token logprob | 0.670 | 0.209 | 0.557 |
+| step length | 0.755 | 0.360 | 0.792 |
+| random | 0.440 | 0.124 | 0.547 |
 
 单层 sweep：
 
 | layer | AUROC | AUPRC | top 30% budget coverage |
 |---|---:|---:|---:|
-| 6 | 0.770 | 0.335 | 0.830 |
-| 13 | 0.853 | 0.445 | 0.851 |
-| 20 | 0.886 | 0.598 | 0.872 |
-| 27 | 0.862 | 0.579 | 0.872 |
+| 6 | 0.670 | 0.231 | 0.740 |
+| 13 | 0.742 | 0.340 | 0.708 |
+| 20 | 0.773 | 0.354 | 0.771 |
+| 27 | 0.753 | 0.335 | 0.766 |
 
-当前 best single layer 是 layer 20。四层拼接仍然是主配置，因为它更稳定地覆盖浅层、中层和深层信号。
+当前 best single layer 仍是 layer 20。四层拼接是主配置，因为它稳定覆盖浅层、中层和深层信号。
 
 ## 8. 复现命令
 

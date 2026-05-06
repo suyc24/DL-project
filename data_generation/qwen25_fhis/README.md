@@ -12,7 +12,7 @@ Default target:
 - Dataset: `Hothan/OlympiadBench`
 - Subset: `OE_TO_maths_en_COMP`
 - Model: `Qwen/Qwen2.5-Math-7B-Instruct`
-- Problems: `200`
+- Problems: `674`
 - Samples per problem: `4`
 - Context: `4096`, with `3072` max generated tokens
 - Expected accuracy: about `41.6%` from the Qwen2.5-Math official CoT pass@1
