@@ -6,7 +6,9 @@ from typing import Any
 
 
 STEP_RE = re.compile(
-    r"(?ms)(?:^|\n)\s*Step\s+(\d+)\s*:\s*(.*?)(?=(?:\n\s*Step\s+\d+\s*:)|(?:\n\s*Final Answer\s*:)|\Z)"
+    r"(?ms)(?:^|\n)\s*(?:#{1,6}\s*)?(?:\*\*)?Step\s+(\d+)\s*(?::|\*\*:)\s*"
+    r"(.*?)(?=(?:\n\s*(?:#{1,6}\s*)?(?:\*\*)?Step\s+\d+\s*(?::|\*\*:))|"
+    r"(?:\n\s*Final Answer\s*:)|\Z)"
 )
 NUMBERED_STEP_RE = re.compile(
     r"(?ms)(?:^|\n)\s*(\d+)[.)]\s+(.*?)(?=(?:\n\s*\d+[.)]\s+)|(?:\n\s*Final Answer\s*:)|\Z)"

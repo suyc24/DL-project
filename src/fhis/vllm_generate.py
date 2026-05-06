@@ -39,10 +39,13 @@ def build_trace_rows(
     problem: dict[str, Any],
     prompt: str,
     completion_outputs: Iterable[Any],
+    generation_config: dict[str, Any],
+    model_name: str,
+    completion_prefix: str,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for sample_index, output in enumerate(completion_outputs):
-        completion = output.text
+        completion = completion_prefix + output.text
         steps = extract_steps(completion)
         final_answer = extract_final_answer(completion)
         token_ids = list(getattr(output, "token_ids", []) or [])
@@ -56,9 +59,15 @@ def build_trace_rows(
             {
                 "trace_id": trace_id,
                 "problem_id": problem["problem_id"],
+                "dataset": problem.get("dataset"),
+                "subset": problem.get("subset"),
+                "model_name": model_name,
                 "sample_index": sample_index,
                 "subject": problem["subject"],
                 "level": problem["level"],
+                "source_split": problem.get("source_split"),
+                "generation_config": generation_config,
+                "completion_prefix": completion_prefix,
                 "problem": problem["problem"],
                 "reference_solution": problem["reference_solution"],
                 "reference_answer": problem["reference_answer"],
@@ -101,7 +110,8 @@ def main() -> None:
         problems = [p for p in problems if str(p["problem_id"]) not in done_problem_ids]
 
     tokenizer = AutoTokenizer.from_pretrained(model_cfg["name"], trust_remote_code=True)
-    prompts = [
+    completion_prefix = str(gen_cfg.get("completion_prefix", ""))
+    base_prompts = [
         apply_qwen_chat_template(
             tokenizer,
             build_user_prompt(p["problem"]),
@@ -109,20 +119,19 @@ def main() -> None:
         )
         for p in problems
     ]
+    prompts = [prompt + completion_prefix for prompt in base_prompts]
 
-    llm = LLM(
-        model=model_cfg["name"],
-        tensor_parallel_size=int(model_cfg.get("tensor_parallel_size", 1)),
-        dtype=model_cfg.get("dtype", "auto"),
-        gpu_memory_utilization=float(model_cfg.get("gpu_memory_utilization", 0.9)),
-        max_model_len=int(model_cfg.get("max_model_len", 8192)),
-        trust_remote_code=True,
-        attention_config=(
-            {"backend": model_cfg["attention_backend"]}
-            if model_cfg.get("attention_backend")
-            else None
-        ),
-    )
+    llm_kwargs = {
+        "model": model_cfg["name"],
+        "tensor_parallel_size": int(model_cfg.get("tensor_parallel_size", 1)),
+        "dtype": model_cfg.get("dtype", "auto"),
+        "gpu_memory_utilization": float(model_cfg.get("gpu_memory_utilization", 0.9)),
+        "max_model_len": int(model_cfg.get("max_model_len", 8192)),
+        "trust_remote_code": True,
+    }
+    if model_cfg.get("attention_backend"):
+        llm_kwargs["attention_config"] = {"backend": model_cfg["attention_backend"]}
+    llm = LLM(**llm_kwargs)
     temperature = float(gen_cfg.get("temperature", 0.7))
     n_samples = int(gen_cfg.get("n_samples_per_problem", 3))
     if temperature == 0.0 and n_samples != 1:
@@ -136,14 +145,29 @@ def main() -> None:
         max_tokens=int(gen_cfg.get("max_new_tokens", 4096)),
         logprobs=int(gen_cfg.get("logprobs", 1)),
     )
+    generation_config = {
+        "temperature": temperature,
+        "top_p": float(gen_cfg.get("top_p", 0.95)),
+        "n_samples_per_problem": n_samples,
+        "max_new_tokens": int(gen_cfg.get("max_new_tokens", 4096)),
+        "logprobs": int(gen_cfg.get("logprobs", 1)),
+        "completion_prefix": completion_prefix,
+    }
 
     outputs = llm.generate(prompts, sampling_params)
-    for problem, prompt, request_output in tqdm(
-        zip(problems, prompts, outputs, strict=True),
+    for problem, base_prompt, request_output in tqdm(
+        zip(problems, base_prompts, outputs, strict=True),
         total=len(problems),
         desc="writing traces",
     ):
-        rows = build_trace_rows(problem, prompt, request_output.outputs)
+        rows = build_trace_rows(
+            problem,
+            base_prompt,
+            request_output.outputs,
+            generation_config,
+            model_cfg["name"],
+            completion_prefix,
+        )
         append_jsonl(output_path, rows)
 
     print(f"Wrote traces for {len(problems)} problems to {output_path}")

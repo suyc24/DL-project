@@ -1,0 +1,8 @@
+data_generation/qwen25_fhis/outputs/** filter=lfs diff=lfs merge=lfs -text
+data_generation/qwen25_fhis/outputs_smoke/** filter=lfs diff=lfs merge=lfs -text
+data_generation/qwen25_fhis/labels/** filter=lfs diff=lfs merge=lfs -text
+data_generation/qwen25_fhis/features/** filter=lfs diff=lfs merge=lfs -text
+data_generation/qwen25_fhis/results/** filter=lfs diff=lfs merge=lfs -text
+data_generation/qwen25_fhis/logs/** filter=lfs diff=lfs merge=lfs -text
+data_generation/qwen25_fhis/holdouts/** filter=lfs diff=lfs merge=lfs -text
+data_generation/stable_snapshots/** filter=lfs diff=lfs merge=lfs -text

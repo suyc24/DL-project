@@ -46,6 +46,8 @@ def load_math_subset(config: dict[str, Any], limit: int | None = None) -> list[d
                 subject_rows.append(
                     {
                         "problem_id": f"{subject}-{split}-{idx}",
+                        "dataset": dataset_cfg["hf_name"],
+                        "subset": "math_level5",
                         "subject": subject,
                         "level": level,
                         "problem": str(item["problem"]),

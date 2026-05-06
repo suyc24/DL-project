@@ -20,4 +20,5 @@ figures/*.png
 *.log
 *.pid
 
-data_generation/stable_snapshots/
+!data_generation/**/*.log
+!data_generation/**/*.pid
