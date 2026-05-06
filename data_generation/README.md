@@ -108,8 +108,9 @@ data_generation/qwen25_fhis/configs/recommended.yaml
 
 | 路径 | 用途 |
 |---|---|
+| `src/fhis/labeling.py` | 统一 FHIS 标注 prompt、normalize、候选过滤和结构校验 |
 | `qwen25_fhis/scripts/generate_olympiadbench_traces.py` | 生成 OlympiadBench traces |
-| `qwen25_fhis/scripts/label_with_local_codex.py` | 调用本地 Codex 做 FHIS 标注 |
+| `qwen25_fhis/scripts/label_with_local_codex.py` | 调用本地 Codex 做 FHIS 标注；标注规则复用 `src/fhis/labeling.py` |
 | `qwen25_fhis/scripts/filter_fhis_labels_for_training.py` | 生成 Codex-clean 训练标签 |
 | `qwen25_fhis/scripts/filter_step_hidden_states_by_labels.py` | 从已有 hidden-state 缓存过滤 clean features |
 | `qwen25_fhis/scripts/summarize_fhis_labels.py` | 汇总 Codex 标注 |
@@ -216,9 +217,20 @@ correct trace:
 训练配置：
 
 ```text
+默认主模型:
+StandardScaler(train mean/std)
+MLP(14336 -> 512 -> 128 -> 1, LayerNorm + GELU + Dropout)
+Recall-biased loss = weighted BCE + soft Tversky + positive-logit margin
+validation set 上选择 decision threshold，目标是尽量满足 positive recall 0.99，
+同时让 negative accuracy 不低于 0.80
+
+同时保留 hidden_logistic 作为 baseline:
 StandardScaler()
 LogisticRegression(max_iter=2000, class_weight="balanced", solver="lbfgs")
 ```
+
+下面表格是切换到 MLP 前的 logistic baseline 结果；重新运行训练后，
+`probe_metrics.json` 会同时包含 `hidden_mlp` 和 `hidden_logistic`。
 
 训练命令：
 

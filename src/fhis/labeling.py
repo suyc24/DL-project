@@ -16,18 +16,62 @@ LABEL_SCHEMA = """Return only valid JSON with this schema:
 """
 
 
-def build_label_prompt(trace: dict[str, Any]) -> str:
-    steps_text = "\n".join(
-        f"Step {step['index']}: {step['text']}" for step in trace.get("steps", [])
-    )
-    return f"""You are labeling mathematical reasoning traces for a probing experiment.
+def compact_steps(trace: dict[str, Any]) -> str:
+    lines = []
+    for step in trace.get("steps", []):
+        text = str(step.get("text", "")).strip()
+        lines.append(f"Step {step['index']}: {text}")
+    return "\n\n".join(lines)
 
-Task:
-1. Decide whether the generated final answer is correct.
-2. If the final answer is wrong, identify the first harmful invalid step: the earliest step
-   whose mathematical claim or transformation is invalid and can plausibly cause the wrong answer.
-3. If the final answer is correct and all reasoning is valid, set first_invalid_step to null.
-4. If unsure, use confidence medium or low.
+
+def rough_final_correct_text(trace: dict[str, Any]) -> str:
+    rough = trace.get("rough_final_correct")
+    return "unknown" if rough is None else str(bool(rough)).lower()
+
+
+def coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered == "true":
+            return True
+        if lowered == "false":
+            return False
+    return bool(value)
+
+
+def build_label_prompt(trace: dict[str, Any]) -> str:
+    """Build the canonical FHIS annotation prompt used by all labelers."""
+    return f"""You are creating high-quality FHIS labels for a mathematical reasoning probe.
+
+Definitions:
+- A harmful invalid step is the earliest generated step whose mathematical claim,
+  transformation, computation, or conclusion is wrong and can plausibly cause the
+  final answer to be wrong.
+- If the final answer is correct and the generated reasoning has no harmful invalid
+  step, set final_correct=true and first_invalid_step=null.
+- If the final answer is wrong, first_invalid_step should be the earliest harmful
+  invalid step. Do not choose a later step if an earlier harmful error exists.
+- If the generated trace is incomplete, lacks enough information, or the first
+  harmful invalid step cannot be determined, use confidence="low".
+- Minor wording issues, missing rigor, or skipped algebra are not harmful invalid
+  steps unless they introduce a false claim.
+
+Return only JSON matching this schema:
+{{
+  "final_correct": true or false,
+  "first_invalid_step": integer or null,
+  "error_type": string or null,
+  "reason": string,
+  "confidence": "high" or "medium" or "low"
+}}
+
+Trace id:
+{trace.get("trace_id")}
+
+Rough automatic final-answer match:
+{rough_final_correct_text(trace)}
 
 Problem:
 {trace["problem"]}
@@ -42,9 +86,7 @@ Generated final answer:
 {trace.get("final_answer")}
 
 Generated steps:
-{steps_text}
-
-{LABEL_SCHEMA}
+{compact_steps(trace)}
 """
 
 
@@ -62,20 +104,69 @@ def parse_json_object(text: str) -> dict[str, Any]:
         return json.loads(match.group(0))
 
 
-def normalize_label(raw: dict[str, Any], trace_id: str) -> dict[str, Any]:
+def normalize_label(
+    raw: dict[str, Any],
+    trace: dict[str, Any] | None = None,
+    trace_id: str | None = None,
+    labeler: str | None = None,
+    labeler_model: str | None = None,
+    labeler_reasoning_effort: str | None = None,
+) -> dict[str, Any]:
+    """Normalize a raw annotator response into the canonical FHIS label row."""
     first_invalid = raw.get("first_invalid_step")
     if first_invalid in ("", "null", "None"):
         first_invalid = None
     if first_invalid is not None:
         first_invalid = int(first_invalid)
-    return {
-        "trace_id": trace_id,
-        "final_correct": bool(raw.get("final_correct", False)),
+    if trace is not None:
+        trace_id = str(trace["trace_id"])
+    if trace_id is None:
+        raise ValueError("normalize_label requires trace or trace_id")
+
+    label = {
+        "trace_id": str(trace_id),
+        "final_correct": coerce_bool(raw.get("final_correct", False)),
         "first_invalid_step": first_invalid,
         "error_type": raw.get("error_type"),
-        "reason": str(raw.get("reason", "")),
+        "reason": str(raw.get("reason", "")).strip(),
         "confidence": str(raw.get("confidence", "low")).lower(),
     }
+    if trace is not None:
+        if "problem_id" in trace:
+            label["problem_id"] = str(trace["problem_id"])
+        label["rough_final_correct"] = trace.get("rough_final_correct")
+        label["num_steps"] = len(trace.get("steps", []))
+    if labeler is not None:
+        label["labeler"] = labeler
+    if labeler_model is not None:
+        label["labeler_model"] = labeler_model
+    if labeler_reasoning_effort is not None:
+        label["labeler_reasoning_effort"] = labeler_reasoning_effort
+    return label
+
+
+def label_is_structurally_valid(label: dict[str, Any]) -> bool:
+    if not str(label.get("reason", "")).strip():
+        return False
+    if label.get("confidence") not in {"high", "medium", "low"}:
+        return False
+    first_invalid = label.get("first_invalid_step")
+    if first_invalid is None:
+        return True
+    num_steps = label.get("num_steps")
+    if num_steps is None:
+        return int(first_invalid) >= 1
+    return 1 <= int(first_invalid) <= int(num_steps)
+
+
+def is_labeling_candidate(trace: dict[str, Any], include_unknown: bool = False) -> bool:
+    if not trace.get("steps"):
+        return False
+    if trace.get("rough_final_correct") is None and not include_unknown:
+        return False
+    if trace.get("final_answer") is None and not include_unknown:
+        return False
+    return True
 
 
 def fhis_step_label(

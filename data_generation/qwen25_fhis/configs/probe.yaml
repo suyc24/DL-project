@@ -19,9 +19,31 @@ split:
   test: 0.15
 
 probe:
-  kind: logistic
+  kind: mlp
   max_iter: 2000
   class_weight: balanced
+  device: auto
+  mlp:
+    loss: recall_tversky
+    hidden_dims: [512, 128]
+    dropout: 0.20
+    lr: 0.0003
+    weight_decay: 0.0001
+    batch_size: 256
+    max_epochs: 120
+    patience: 15
+    monitor: auprc
+    use_pos_weight: true
+    positive_weight_multiplier: 3.0
+    bce_weight: 1.0
+    tversky_weight: 0.75
+    tversky_alpha: 0.15
+    tversky_beta: 0.85
+    positive_margin_weight: 0.10
+    positive_logit_margin: 1.0
+    positive_recall_target: 0.99
+    negative_accuracy_floor: 0.80
+    grad_clip: 1.0
 
 paths:
   problems: data_generation/qwen25_fhis/outputs/problems.jsonl
@@ -30,4 +52,4 @@ paths:
   hidden_states: data_generation/qwen25_fhis/features/step_hidden_states_codex_clean.pt
   metrics: data_generation/qwen25_fhis/results/probe_metrics.json
   layer_sweep: data_generation/qwen25_fhis/results/layer_sweep.csv
-  probe_model: data_generation/qwen25_fhis/results/hidden_logistic_probe.joblib
+  probe_model: data_generation/qwen25_fhis/results/hidden_mlp_probe.joblib

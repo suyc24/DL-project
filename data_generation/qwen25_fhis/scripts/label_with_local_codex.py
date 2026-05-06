@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,17 @@ def find_repo_root(start: Path) -> Path:
 
 
 REPO_ROOT = find_repo_root(Path(__file__).resolve())
+SRC_DIR = REPO_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from fhis.labeling import (  # noqa: E402
+    build_label_prompt,
+    is_labeling_candidate,
+    label_is_structurally_valid,
+    normalize_label,
+    parse_json_object,
+)
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -52,111 +64,6 @@ def append_jsonl(path: str | Path, row: dict[str, Any]) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def parse_json_object(text: str) -> dict[str, Any]:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.removeprefix("```json").removeprefix("```").strip()
-        text = text.removesuffix("```").strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start == -1 or end == -1 or end < start:
-            raise
-        return json.loads(text[start : end + 1])
-
-
-def compact_steps(trace: dict[str, Any]) -> str:
-    lines = []
-    for step in trace.get("steps", []):
-        text = str(step.get("text", "")).strip()
-        lines.append(f"Step {step['index']}: {text}")
-    return "\n\n".join(lines)
-
-
-def build_prompt(trace: dict[str, Any]) -> str:
-    rough = trace.get("rough_final_correct")
-    rough_text = "unknown" if rough is None else str(bool(rough)).lower()
-    return f"""You are creating high-quality FHIS labels for a mathematical reasoning probe.
-
-Definitions:
-- A harmful invalid step is the earliest generated step whose mathematical claim,
-  transformation, computation, or conclusion is wrong and can plausibly cause the
-  final answer to be wrong.
-- If the final answer is correct and the generated reasoning has no harmful invalid
-  step, set final_correct=true and first_invalid_step=null.
-- If the final answer is wrong, first_invalid_step should be the earliest harmful
-  invalid step. Do not choose a later step if an earlier harmful error exists.
-- If the generated trace is incomplete, lacks enough information, or the first
-  harmful invalid step cannot be determined, use confidence="low".
-- Minor wording issues, missing rigor, or skipped algebra are not harmful invalid
-  steps unless they introduce a false claim.
-
-Return only JSON matching this schema:
-{{
-  "final_correct": true or false,
-  "first_invalid_step": integer or null,
-  "error_type": string or null,
-  "reason": string,
-  "confidence": "high" or "medium" or "low"
-}}
-
-Trace id:
-{trace["trace_id"]}
-
-Rough automatic final-answer match:
-{rough_text}
-
-Problem:
-{trace["problem"]}
-
-Reference answer:
-{trace.get("reference_answer")}
-
-Reference solution:
-{trace.get("reference_solution")}
-
-Generated final answer:
-{trace.get("final_answer")}
-
-Generated steps:
-{compact_steps(trace)}
-"""
-
-
-def normalize_label(raw: dict[str, Any], trace: dict[str, Any]) -> dict[str, Any]:
-    first_invalid = raw.get("first_invalid_step")
-    if first_invalid in ("", "null", "None"):
-        first_invalid = None
-    if first_invalid is not None:
-        first_invalid = int(first_invalid)
-    return {
-        "trace_id": str(trace["trace_id"]),
-        "problem_id": str(trace["problem_id"]),
-        "final_correct": bool(raw.get("final_correct", False)),
-        "first_invalid_step": first_invalid,
-        "error_type": raw.get("error_type"),
-        "reason": str(raw.get("reason", "")).strip(),
-        "confidence": str(raw.get("confidence", "low")).lower(),
-        "rough_final_correct": trace.get("rough_final_correct"),
-        "num_steps": len(trace.get("steps", [])),
-        "labeler": "local_codex",
-        "labeler_model": "gpt-5.5",
-        "labeler_reasoning_effort": "high",
-    }
-
-
-def is_training_candidate(trace: dict[str, Any], include_unknown: bool) -> bool:
-    if not trace.get("steps"):
-        return False
-    if trace.get("rough_final_correct") is None and not include_unknown:
-        return False
-    if trace.get("final_answer") is None and not include_unknown:
-        return False
-    return True
 
 
 def run_codex(prompt: str, schema_path: Path, model: str, reasoning_effort: str) -> dict[str, Any]:
@@ -199,17 +106,6 @@ def run_codex(prompt: str, schema_path: Path, model: str, reasoning_effort: str)
         return parse_json_object(out.read())
 
 
-def label_is_structurally_valid(label: dict[str, Any]) -> bool:
-    if not label["reason"]:
-        return False
-    if label["confidence"] not in {"high", "medium", "low"}:
-        return False
-    first_invalid = label["first_invalid_step"]
-    if first_invalid is None:
-        return True
-    return 1 <= int(first_invalid) <= int(label["num_steps"])
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Label FHIS with local Codex CLI.")
     parser.add_argument(
@@ -246,7 +142,7 @@ def main() -> None:
     traces = [
         trace
         for idx, trace in enumerate(read_jsonl(args.traces))
-        if is_training_candidate(trace, include_unknown=args.include_unknown)
+        if is_labeling_candidate(trace, include_unknown=args.include_unknown)
         and (not target_trace_ids or trace["trace_id"] in target_trace_ids)
         and idx % int(args.num_shards) == int(args.shard_index)
     ]
@@ -259,12 +155,18 @@ def main() -> None:
     schema_path = Path(args.schema)
     failures_path = Path(args.output).with_suffix(".failures.jsonl")
     for i, trace in enumerate(traces, start=1):
-        prompt = build_prompt(trace)
+        prompt = build_label_prompt(trace)
         last_error = None
         for attempt in range(args.max_retries + 1):
             try:
                 raw = run_codex(prompt, schema_path, args.model, args.reasoning_effort)
-                label = normalize_label(raw, trace)
+                label = normalize_label(
+                    raw,
+                    trace=trace,
+                    labeler="local_codex",
+                    labeler_model=args.model,
+                    labeler_reasoning_effort=args.reasoning_effort,
+                )
                 if not label_is_structurally_valid(label):
                     raise ValueError(f"invalid label structure: {label}")
                 append_jsonl(args.output, label)
