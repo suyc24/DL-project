@@ -22,3 +22,5 @@ figures/*.png
 
 !data_generation/**/*.log
 !data_generation/**/*.pid
+
+build/
