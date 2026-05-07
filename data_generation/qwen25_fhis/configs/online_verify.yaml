@@ -1,0 +1,55 @@
+seed: 20260505
+
+model:
+  name: Qwen/Qwen2.5-Math-7B-Instruct
+  tensor_parallel_size: 1
+  dtype: auto
+  gpu_memory_utilization: 0.90
+  max_model_len: 4096
+  layers: [6, 13, 20, 27]
+  enable_thinking: true
+
+online:
+  # Whole-trace retry budget after a step exhausts local regeneration attempts.
+  retry_budget: 3
+  # If a routed step fails Lean verification, regenerate that same step this many
+  # times under the same accepted prefix before abandoning the whole trace attempt.
+  step_retry_budget: 2
+  max_steps: 32
+  max_step_new_tokens: 512
+  max_final_new_tokens: 256
+  temperature: 0.7
+  top_p: 0.95
+  completion_prefix: "Step 1:"
+  # The first implementation uses transformers and re-forwards the prefix after each
+  # step to extract hidden states. This is slower than vLLM but keeps the online
+  # control loop simple and faithful to the prefix-causal interface.
+  device: auto
+
+router:
+  probe_model: data_generation/qwen25_fhis/results/hidden_mlp_probe.joblib
+  # If omitted, the saved probe decision_threshold is used. Set explicitly for
+  # budget sweeps, e.g. 0.10/0.20/0.30 verification rates calibrated offline.
+  threshold: null
+
+formalizer:
+  # Use "stepfun" or "transformers" with a local/HF StepFun-Formalizer-7B model
+  # when available. The null backend is conservative: every routed step fails
+  # formalization, which is useful for dry-run plumbing tests but not evaluation.
+  backend: null
+  model: StepFun-AI/StepFun-Formalizer-7B
+  device: auto
+  dtype: auto
+  max_new_tokens: 1024
+  temperature: 0.0
+  top_p: 0.95
+
+lean:
+  executable: lean
+  workdir: null
+  timeout_s: 30
+  keep_files: false
+
+paths:
+  problems: data_generation/qwen25_fhis/outputs/problems.jsonl
+  online_results: data_generation/qwen25_fhis/results/online_verify_results.jsonl

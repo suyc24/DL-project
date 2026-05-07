@@ -1,0 +1,142 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Protocol
+
+
+@dataclass(frozen=True)
+class FormalizationRequest:
+    problem: str
+    previous_steps: list[str]
+    current_step_index: int
+    current_step: str
+
+
+class StepFormalizer(Protocol):
+    def formalize(self, request: FormalizationRequest) -> str:
+        ...
+
+
+def strip_code_fence(text: str) -> str:
+    text = text.strip()
+    match = re.search(r"```(?:lean4?|Lean4?)?\s*(.*?)```", text, flags=re.S)
+    if match:
+        return match.group(1).strip()
+    return text
+
+
+def build_formalizer_prompt(request: FormalizationRequest) -> str:
+    previous = "\n".join(
+        f"Step {i + 1}: {text}" for i, text in enumerate(request.previous_steps)
+    )
+    if not previous:
+        previous = "(none)"
+    return f"""Translate one mathematical reasoning step into a self-contained Lean 4 check.
+
+You are given the original problem, the previous accepted natural-language steps,
+and the current step to verify. Produce Lean 4 code only.
+
+The Lean file should compile if and only if the current step is mathematically valid
+under the assumptions already established by the problem and previous steps.
+Use `by` proofs, `norm_num`, `ring`, `linarith`, or small explicit proofs when possible.
+Do not include markdown fences or commentary.
+If the step cannot be faithfully formalized, output:
+
+-- formalization_failed
+
+Problem:
+{request.problem}
+
+Previous accepted steps:
+{previous}
+
+Current step:
+Step {request.current_step_index}: {request.current_step}
+"""
+
+
+class NullFormalizer:
+    def formalize(self, request: FormalizationRequest) -> str:
+        return "-- formalization_failed"
+
+
+class TransformersFormalizer:
+    def __init__(
+        self,
+        model_name: str,
+        device: str = "auto",
+        dtype: str = "auto",
+        max_new_tokens: int = 1024,
+        temperature: float = 0.0,
+        top_p: float = 0.95,
+    ) -> None:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        import torch
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        torch_dtype = "auto"
+        if dtype == "bfloat16":
+            torch_dtype = torch.bfloat16
+        elif dtype == "float16":
+            torch_dtype = torch.float16
+        elif dtype == "float32":
+            torch_dtype = torch.float32
+        device_map = device if device == "auto" or device.startswith("cuda") else None
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch_dtype,
+            trust_remote_code=True,
+            device_map=device_map,
+        )
+        if device == "cpu":
+            self.model.to("cpu")
+        self.model.eval()
+        self.max_new_tokens = int(max_new_tokens)
+        self.temperature = float(temperature)
+        self.top_p = float(top_p)
+
+    def formalize(self, request: FormalizationRequest) -> str:
+        import torch
+
+        prompt = build_formalizer_prompt(request)
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            text = self.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        except TypeError:
+            text = prompt
+        encoded = self.tokenizer(text, return_tensors="pt", add_special_tokens=False)
+        encoded = {k: v.to(self.model.device) for k, v in encoded.items()}
+        do_sample = self.temperature > 0
+        with torch.no_grad():
+            output = self.model.generate(
+                **encoded,
+                max_new_tokens=self.max_new_tokens,
+                do_sample=do_sample,
+                temperature=self.temperature if do_sample else None,
+                top_p=self.top_p if do_sample else None,
+                pad_token_id=self.tokenizer.eos_token_id,
+            )
+        generated = output[0, encoded["input_ids"].shape[1] :]
+        return strip_code_fence(self.tokenizer.decode(generated, skip_special_tokens=True))
+
+
+def build_formalizer(config: dict) -> StepFormalizer:
+    formalizer_cfg = config.get("formalizer", {})
+    backend = str(formalizer_cfg.get("backend", "null")).lower()
+    if backend == "null":
+        return NullFormalizer()
+    if backend in {"transformers", "hf", "stepfun"}:
+        return TransformersFormalizer(
+            model_name=str(formalizer_cfg.get("model", "StepFun-AI/StepFun-Formalizer-7B")),
+            device=str(formalizer_cfg.get("device", "auto")),
+            dtype=str(formalizer_cfg.get("dtype", "auto")),
+            max_new_tokens=int(formalizer_cfg.get("max_new_tokens", 1024)),
+            temperature=float(formalizer_cfg.get("temperature", 0.0)),
+            top_p=float(formalizer_cfg.get("top_p", 0.95)),
+        )
+    raise ValueError(f"Unsupported formalizer.backend={backend!r}")

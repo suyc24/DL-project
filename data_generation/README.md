@@ -406,6 +406,37 @@ python -m fhis.train_probe \
   --config data_generation/qwen25_fhis/configs/probe.yaml
 ```
 
+校准 online router 阈值，例如把验证集上的 Lean 调用率定到 30%：
+
+```bash
+python -m fhis.calibrate_router \
+  --config data_generation/qwen25_fhis/configs/probe.yaml \
+  --target-rate 0.30 \
+  --positive-recall 0.99
+```
+
+在线 selective verification 闭环：
+
+```bash
+python -m fhis.online_router \
+  --config data_generation/qwen25_fhis/configs/online_verify.yaml \
+  --limit 10
+```
+
+`online_verify.yaml` 默认使用 conservative `formalizer.backend: null`，只用于
+检查生成-probe-route-terminate 管线。实际评估时应切到 `backend: stepfun`
+或 `backend: transformers`，并指向本地可用的 StepFun-Formalizer-7B 模型。
+当前 online policy 是：被 probe route 的 step 若 Lean 未通过，先在相同已接受
+prefix 下重生成当前 step，默认重试 2 次；当前 step 仍不通过时才放弃整条
+trace attempt，并进入下一次整题重采样。
+
+统计在线闭环的 answer rate、rough solve rate 和 Lean 调用成本：
+
+```bash
+python -m fhis.evaluate_online \
+  --config data_generation/qwen25_fhis/configs/online_verify.yaml
+```
+
 查看 summary：
 
 ```bash
