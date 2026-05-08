@@ -1,0 +1,45 @@
+seed: 20260505
+
+model:
+  name: Qwen/Qwen2.5-Math-7B-Instruct
+  tensor_parallel_size: 1
+  dtype: bfloat16
+  gpu_memory_utilization: 0.90
+  max_model_len: 4096
+  layers: [6, 13, 20, 27]
+  enable_thinking: true
+
+online:
+  retry_budget: 1
+  step_retry_budget: 0
+  max_steps: 6
+  max_step_new_tokens: 256
+  max_final_new_tokens: 128
+  temperature: 0.7
+  top_p: 0.95
+  completion_prefix: "Step 1:"
+  device: auto
+
+router:
+  probe_model: data_generation/qwen25_fhis/results/hidden_mlp_probe.joblib
+  # Calibrated on validation rows for about 5% routed steps.
+  threshold: 0.9800784587860107
+
+formalizer:
+  backend: transformers
+  model: StepFun-AI/StepFun-Formalizer-7B
+  device: auto
+  dtype: bfloat16
+  max_new_tokens: 4096
+  temperature: 0.0
+  top_p: 0.95
+
+lean:
+  executable: lean
+  workdir: /root/DL-project/lean_fhis
+  timeout_s: 5
+  keep_files: false
+
+paths:
+  problems: data_generation/qwen25_fhis/outputs/online_smoke_10_problems.jsonl
+  online_results: data_generation/qwen25_fhis/results/online_verify_stepfun_smoke.jsonl

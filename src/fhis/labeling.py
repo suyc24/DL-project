@@ -49,8 +49,11 @@ Definitions:
 - A harmful invalid step is the earliest generated step whose mathematical claim,
   transformation, computation, or conclusion is wrong and can plausibly cause the
   final answer to be wrong.
+- final_correct records whether the generated final answer matches the reference.
+- first_invalid_step records the earliest harmful invalid step, even if the trace
+  later recovers and reaches the correct final answer.
 - If the final answer is correct and the generated reasoning has no harmful invalid
-  step, set final_correct=true and first_invalid_step=null.
+  step, set first_invalid_step=null.
 - If the final answer is wrong, first_invalid_step should be the earliest harmful
   invalid step. Do not choose a later step if an earlier harmful error exists.
 - If the generated trace is incomplete, lacks enough information, or the first
@@ -176,9 +179,9 @@ def fhis_step_label(
 ) -> int | None:
     if str(label.get("confidence", "")).lower() != keep_confidence:
         return None
-    if bool(label.get("final_correct", False)):
-        return 0
     first_invalid = label.get("first_invalid_step")
+    if bool(label.get("final_correct", False)) and first_invalid is None:
+        return 0
     if first_invalid is None:
         return None
     first_invalid = int(first_invalid)

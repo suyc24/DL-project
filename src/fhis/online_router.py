@@ -74,6 +74,15 @@ def first_boundary(text: str, current_step: int) -> re.Match[str] | None:
 
 def load_probe(path: str | Path) -> Any:
     import joblib
+    import __main__
+
+    from fhis.train_probe import HiddenStateMLP, RecallBiasedLoss, TorchMLPProbe
+
+    # Older MLP probe artifacts were saved from a `python -m` entrypoint and refer
+    # to __main__. Register the classes so the artifact remains loadable.
+    __main__.TorchMLPProbe = TorchMLPProbe
+    __main__.HiddenStateMLP = HiddenStateMLP
+    __main__.RecallBiasedLoss = RecallBiasedLoss
 
     payload = joblib.load(path)
     if isinstance(payload, dict) and "model" in payload:

@@ -19,6 +19,8 @@ Final Answer: 4
 def test_reference_boxed_answer() -> None:
     assert extract_reference_answer(r"The answer is \boxed{42}.") == "42"
     assert rough_answer_match(" 42.", r"42")
+    assert rough_answer_match(r"\[\boxed{\frac{1}{2}}\]", r"\frac{1}{2}")
+    assert not rough_answer_match(r"\frac{3}{2}", "3")
 
 
 def test_extract_paragraph_steps_fallback() -> None:

@@ -111,19 +111,14 @@ def main() -> None:
     feature_rows: list[dict[str, Any]] = []
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        llm = LLM(
-            model=model_cfg["name"],
-            tensor_parallel_size=int(model_cfg.get("tensor_parallel_size", 1)),
-            dtype=model_cfg.get("dtype", "auto"),
-            gpu_memory_utilization=float(model_cfg.get("gpu_memory_utilization", 0.9)),
-            max_model_len=int(model_cfg.get("max_model_len", 8192)),
-            trust_remote_code=True,
-            attention_config=(
-                {"backend": model_cfg["attention_backend"]}
-                if model_cfg.get("attention_backend")
-                else None
-            ),
-            speculative_config={
+        llm_kwargs = {
+            "model": model_cfg["name"],
+            "tensor_parallel_size": int(model_cfg.get("tensor_parallel_size", 1)),
+            "dtype": model_cfg.get("dtype", "auto"),
+            "gpu_memory_utilization": float(model_cfg.get("gpu_memory_utilization", 0.9)),
+            "max_model_len": int(model_cfg.get("max_model_len", 8192)),
+            "trust_remote_code": True,
+            "speculative_config": {
                 "method": "extract_hidden_states",
                 "num_speculative_tokens": 1,
                 "draft_model_config": {
@@ -132,14 +127,17 @@ def main() -> None:
                     }
                 },
             },
-            kv_transfer_config={
+            "kv_transfer_config": {
                 "kv_connector": "ExampleHiddenStatesConnector",
                 "kv_role": "kv_producer",
                 "kv_connector_extra_config": {
                     "shared_storage_path": tmpdir,
                 },
             },
-        )
+        }
+        if model_cfg.get("attention_backend"):
+            llm_kwargs["attention_config"] = {"backend": model_cfg["attention_backend"]}
+        llm = LLM(**llm_kwargs)
         outputs = llm.generate(full_prompts, SamplingParams(max_tokens=1, temperature=0.0))
 
         for trace, output in tqdm(

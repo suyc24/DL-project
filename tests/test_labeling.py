@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fhis.labeling import (
     build_label_prompt,
+    fhis_step_label,
     is_labeling_candidate,
     label_is_structurally_valid,
     normalize_label,
@@ -90,3 +91,19 @@ def test_labeling_candidate_filters_unknown_by_default() -> None:
     trace["rough_final_correct"] = None
     assert not is_labeling_candidate(trace)
     assert is_labeling_candidate(trace, include_unknown=True)
+
+
+def test_fhis_step_label_keeps_invalid_step_when_final_answer_recovers() -> None:
+    label = normalize_label(
+        {
+            "final_correct": True,
+            "first_invalid_step": 2,
+            "error_type": "bad intermediate claim",
+            "reason": "invalid but recovered",
+            "confidence": "high",
+        },
+        trace=sample_trace(),
+    )
+
+    assert fhis_step_label(label, 1) == 0
+    assert fhis_step_label(label, 2) == 1

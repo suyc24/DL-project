@@ -1,0 +1,12 @@
+{
+  "num_traces": 8,
+  "num_problems": 4,
+  "rough_correct": 2,
+  "rough_wrong": 2,
+  "rough_unknown": 4,
+  "rough_accuracy": 0.5,
+  "step_parse_rate": 1.0,
+  "model": "Qwen/Qwen2.5-Math-7B-Instruct",
+  "dataset": "Hothan/OlympiadBench",
+  "subset": "OE_TO_maths_en_COMP"
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Any
 
 
@@ -111,6 +112,11 @@ def normalize_answer(answer: str | None) -> str | None:
     if answer is None:
         return None
     answer = answer.strip()
+    boxed = BOXED_RE.findall(answer)
+    if boxed:
+        answer = boxed[-1].strip()
+    answer = re.sub(r"^\\\[\s*|\s*\\\]$", "", answer).strip()
+    answer = re.sub(r"^\\\(\s*|\s*\\\)$", "", answer).strip()
     answer = re.sub(r"^\$|\$$", "", answer)
     answer = answer.replace("\\left", "").replace("\\right", "")
     answer = re.sub(r"\s+", "", answer)
@@ -118,12 +124,33 @@ def normalize_answer(answer: str | None) -> str | None:
     return answer
 
 
+def simple_numeric_value(answer: str | None) -> Fraction | None:
+    normalized = normalize_answer(answer)
+    if normalized is None:
+        return None
+    frac = re.fullmatch(r"\\frac\{(-?\d+)\}\{(-?\d+)\}", normalized)
+    if frac:
+        denominator = int(frac.group(2))
+        if denominator == 0:
+            return None
+        return Fraction(int(frac.group(1)), denominator)
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", normalized):
+        return Fraction(normalized)
+    return None
+
+
 def rough_answer_match(predicted: str | None, reference: str | None) -> bool | None:
     pred = normalize_answer(predicted)
     ref = normalize_answer(reference)
     if pred is None or ref is None:
         return None
-    return pred == ref or pred in ref or ref in pred
+    if pred == ref:
+        return True
+    pred_num = simple_numeric_value(pred)
+    ref_num = simple_numeric_value(ref)
+    if pred_num is not None and ref_num is not None:
+        return pred_num == ref_num
+    return False
 
 
 def step_end_token_indices(

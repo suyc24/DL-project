@@ -1,0 +1,37 @@
+seed: 20260506
+
+dataset:
+  hf_name: Hothan/OlympiadBench
+  subset: OE_TO_maths_en_COMP
+  split: train
+  target_problems: 4
+
+model:
+  name: Qwen/Qwen2.5-Math-7B-Instruct
+  tensor_parallel_size: 1
+  dtype: auto
+  gpu_memory_utilization: 0.90
+  max_model_len: 8192
+  layers: [6, 13, 20, 27]
+  enforce_eager: true
+  enable_thinking: true
+
+generation:
+  temperature: 0.3
+  top_p: 0.9
+  n_samples_per_problem: 2
+  max_new_tokens: 4096
+  logprobs: 5
+  completion_prefix: "Step 1:"
+
+labels:
+  annotator_model: gpt-5.5
+  keep_confidence: high
+
+paths:
+  output_dir: data_generation/qwen25_fhis/outputs_quality_pilot
+  problems: data_generation/qwen25_fhis/outputs_quality_pilot/problems.jsonl
+  generated_traces: data_generation/qwen25_fhis/outputs_quality_pilot/generated_traces.jsonl
+  labels: data_generation/qwen25_fhis/outputs_quality_pilot/fhis_labels.jsonl
+  hidden_states: data_generation/qwen25_fhis/outputs_quality_pilot/step_hidden_states.pt
+  summary: data_generation/qwen25_fhis/outputs_quality_pilot/summary.json

@@ -20,9 +20,14 @@ class StepFormalizer(Protocol):
 
 def strip_code_fence(text: str) -> str:
     text = text.strip()
-    match = re.search(r"```(?:lean4?|Lean4?)?\s*(.*?)```", text, flags=re.S)
-    if match:
-        return match.group(1).strip()
+    fence_matches = list(re.finditer(r"```(?:lean4?|Lean4?)?\s*(.*?)```", text, flags=re.S))
+    if fence_matches:
+        return fence_matches[-1].group(1).strip()
+    if "</think>" in text:
+        text = text.split("</think>", 1)[1].strip()
+    code_start = re.search(r"(?m)^(?:import\s+|theorem\s+|lemma\s+|example\s+)", text)
+    if code_start:
+        return text[code_start.start() :].strip()
     return text
 
 
@@ -32,28 +37,32 @@ def build_formalizer_prompt(request: FormalizationRequest) -> str:
     )
     if not previous:
         previous = "(none)"
-    return f"""Translate one mathematical reasoning step into a self-contained Lean 4 check.
-
-You are given the original problem, the previous accepted natural-language steps,
-and the current step to verify. Produce Lean 4 code only.
-
-The Lean file should compile if and only if the current step is mathematically valid
-under the assumptions already established by the problem and previous steps.
-Use `by` proofs, `norm_num`, `ring`, `linarith`, or small explicit proofs when possible.
-Do not include markdown fences or commentary.
-If the step cannot be faithfully formalized, output:
-
--- formalization_failed
-
-Problem:
+    header = "import Mathlib\n\nopen Real\n"
+    informal_problem = f"""Original problem:
 {request.problem}
 
-Previous accepted steps:
+Previously accepted natural-language steps:
 {previous}
 
-Current step:
+Current natural-language step to verify:
 Step {request.current_step_index}: {request.current_step}
+
+Formalize the claim that this current step is valid under the original problem
+and the previously accepted steps. The Lean code must contain a complete proof.
+Do not use `sorry`, `admit`, `axiom`, or unfinished placeholders.
+If the current step cannot be faithfully formalized with a complete proof, output:
+
+-- formalization_failed
 """
+    return (
+        "Please autoformalize the following problem in Lean 4 with a header. "
+        "Use the following theorem names: current_step_valid.\n\n"
+        f"{informal_problem}\n"
+        "Your code should start with:\n"
+        "```Lean4\n"
+        f"{header}"
+        "```\n"
+    )
 
 
 class NullFormalizer:
@@ -74,6 +83,7 @@ class TransformersFormalizer:
         from transformers import AutoModelForCausalLM, AutoTokenizer
         import torch
 
+        patch_transformers_safetensors_metadata()
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         torch_dtype = "auto"
         if dtype == "bfloat16":
@@ -100,13 +110,17 @@ class TransformersFormalizer:
         import torch
 
         prompt = build_formalizer_prompt(request)
-        messages = [{"role": "user", "content": prompt}]
+        messages = [
+            {"role": "system", "content": "You are an expert in mathematics and Lean 4."},
+            {"role": "user", "content": prompt},
+        ]
         try:
             text = self.tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
             )
+            text += "<think>"
         except TypeError:
             text = prompt
         encoded = self.tokenizer(text, return_tensors="pt", add_special_tokens=False)
@@ -125,10 +139,49 @@ class TransformersFormalizer:
         return strip_code_fence(self.tokenizer.decode(generated, skip_special_tokens=True))
 
 
+def patch_transformers_safetensors_metadata() -> None:
+    """Allow loading safetensors shards that omit optional metadata.
+
+    Some HF model shards, including StepFun-Formalizer-7B at the time this was
+    tested, have `safe_open(...).metadata() is None`. Transformers 4.47 assumes
+    this is a dict and crashes before loading otherwise valid tensors.
+    """
+    import transformers.modeling_utils as modeling_utils
+    from safetensors import safe_open
+    from safetensors.torch import load_file as safe_load_file
+
+    if getattr(modeling_utils, "_fhis_safetensors_metadata_patch", False):
+        return
+    original = modeling_utils.load_state_dict
+
+    def load_state_dict_with_missing_metadata(
+        checkpoint_file,
+        is_quantized=False,
+        map_location=None,
+        weights_only=True,
+    ):
+        path = str(checkpoint_file)
+        if path.endswith(".safetensors"):
+            with safe_open(path, framework="pt") as f:
+                metadata = f.metadata()
+            if metadata is None:
+                return safe_load_file(path)
+        return original(
+            checkpoint_file,
+            is_quantized=is_quantized,
+            map_location=map_location,
+            weights_only=weights_only,
+        )
+
+    modeling_utils.load_state_dict = load_state_dict_with_missing_metadata
+    modeling_utils._fhis_safetensors_metadata_patch = True
+
+
 def build_formalizer(config: dict) -> StepFormalizer:
     formalizer_cfg = config.get("formalizer", {})
-    backend = str(formalizer_cfg.get("backend", "null")).lower()
-    if backend == "null":
+    backend_value = formalizer_cfg.get("backend", "null")
+    backend = "null" if backend_value is None else str(backend_value).lower()
+    if backend in {"null", "none"}:
         return NullFormalizer()
     if backend in {"transformers", "hf", "stepfun"}:
         return TransformersFormalizer(

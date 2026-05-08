@@ -64,10 +64,10 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_config(args.config)
-    import joblib
     import torch
 
     from fhis.train_probe import labels, rows_for_split, score_probe, split_problem_ids
+    from fhis.online_router import load_probe
 
     features_path = args.features or config["paths"]["hidden_states"]
     probe_path = args.probe_model or config["paths"]["probe_model"]
@@ -80,8 +80,7 @@ def main() -> None:
         seed=int(config.get("seed", 0)),
     )
     val_rows = rows_for_split(rows, splits["val"])
-    probe_payload = joblib.load(probe_path)
-    probe = probe_payload["model"] if isinstance(probe_payload, dict) else probe_payload
+    probe = load_probe(probe_path)
     scores = score_probe(probe, val_rows)
     y_val = labels(val_rows)
 
