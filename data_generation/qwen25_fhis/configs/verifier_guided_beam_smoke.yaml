@@ -1,0 +1,39 @@
+seed: 20260510
+
+model:
+  name: Qwen/Qwen2.5-Math-7B-Instruct
+  tensor_parallel_size: 1
+  dtype: auto
+  gpu_memory_utilization: 0.90
+  max_model_len: 4096
+  layers: [6, 13, 20, 27]
+  enable_thinking: true
+
+online:
+  max_steps: 18
+  max_step_new_tokens: 384
+  max_final_new_tokens: 192
+  temperature: 0.7
+  top_p: 0.95
+  completion_prefix: "Step 1:"
+  device: auto
+
+verifier_guided_search:
+  beam_width: 3
+  branch_factor: 4
+  max_steps: 18
+  max_step_new_tokens: 384
+  max_final_new_tokens: 192
+  temperature: 0.8
+  final_temperature: 0.0
+  top_p: 0.95
+  risk_weight: 1.0
+  max_risk_weight: 0.5
+  keep_above_threshold: 1
+
+router:
+  probe_model: data_generation/qwen25_fhis/results/hidden_mlp_probe.joblib
+  threshold: 0.9800784587860107
+
+paths:
+  problems: data_generation/qwen25_fhis/outputs/problems_dev_excluding_wrong312.jsonl

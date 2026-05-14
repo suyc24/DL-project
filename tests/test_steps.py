@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from fhis.steps import extract_final_answer, extract_reference_answer, extract_steps, rough_answer_match
+from fhis.steps import (
+    canonical_answer,
+    extract_final_answer,
+    extract_reference_answer,
+    extract_steps,
+    rough_answer_match,
+)
 
 
 def test_extract_steps_and_final_answer() -> None:
@@ -21,6 +27,13 @@ def test_reference_boxed_answer() -> None:
     assert rough_answer_match(" 42.", r"42")
     assert rough_answer_match(r"\[\boxed{\frac{1}{2}}\]", r"\frac{1}{2}")
     assert not rough_answer_match(r"\frac{3}{2}", "3")
+
+
+def test_latex_answer_normalization_handles_common_equivalent_forms() -> None:
+    assert canonical_answer(r"\[\boxed{2^k}\]") == canonical_answer(r"$2^{k}$")
+    assert rough_answer_match(r"\(\boxed{\dfrac{45}{2}}\).", "22.5")
+    assert rough_answer_match(r"Final Answer: \[\boxed{2^{k}}\]", r"$2^k$")
+    assert rough_answer_match(r"\frac{2016}{2017^{2}}", r"\dfrac{2016}{2017^2}")
 
 
 def test_extract_paragraph_steps_fallback() -> None:

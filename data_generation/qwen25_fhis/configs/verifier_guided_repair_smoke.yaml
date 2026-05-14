@@ -1,0 +1,25 @@
+seed: 20260510
+
+model:
+  name: Qwen/Qwen2.5-Math-7B-Instruct
+  tensor_parallel_size: 1
+  dtype: auto
+  gpu_memory_utilization: 0.90
+  max_model_len: 4096
+  layers: [6, 13, 20, 27]
+  enable_thinking: true
+
+verifier_guided_repair:
+  num_repairs: 4
+  max_new_tokens: 1400
+  temperature: 0.8
+  top_p: 0.95
+  risk_metric: top2_mean_score
+  pivot_threshold: 0.80
+  pivot_fallback: max
+  vote_weight: 1.0
+  risk_weight: 0.75
+
+router:
+  probe_model: data_generation/qwen25_fhis/results/hidden_mlp_probe.joblib
+  threshold: 0.9800784587860107

@@ -1,0 +1,35 @@
+{
+  "completed": 20,
+  "changed": 1,
+  "changed_rows": [
+    {
+      "trace_id": "OE_TO_maths_en_COMP-30::sample-2",
+      "source": "scalar_hn",
+      "old_final_correct": false,
+      "new_final_correct": false,
+      "old_first_invalid_step": 2,
+      "new_first_invalid_step": 4,
+      "old_confidence": "high",
+      "new_confidence": "high",
+      "changed": true
+    }
+  ],
+  "by_source": {
+    "rough_codex_conflict": {
+      "completed": 4,
+      "changed": 0
+    },
+    "scalar_fp": {
+      "completed": 8,
+      "changed": 0
+    },
+    "scalar_hn": {
+      "completed": 4,
+      "changed": 1
+    },
+    "scalar_fn": {
+      "completed": 4,
+      "changed": 0
+    }
+  }
+}

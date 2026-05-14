@@ -1,0 +1,36 @@
+seed: 20260505
+
+model:
+  name: Qwen/Qwen2.5-Math-7B-Instruct
+  tensor_parallel_size: 1
+  dtype: auto
+  gpu_memory_utilization: 0.90
+  max_model_len: 4096
+  layers: [6, 13, 20, 27]
+  enable_thinking: true
+
+online:
+  # Whole-solution retries after a step exhausts local probe-only retries.
+  retry_budget: 3
+  max_steps: 32
+  max_step_new_tokens: 512
+  max_final_new_tokens: 256
+  temperature: 0.7
+  top_p: 0.95
+  completion_prefix: "Step 1:"
+  device: auto
+
+probe_retry:
+  # Total attempts for a suspicious step, including the first draft.
+  max_step_attempts: 3
+  max_rejected_step_chars: 1200
+
+router:
+  probe_model: data_generation/qwen25_fhis/results/hidden_mlp_probe.joblib
+  # If omitted, use the saved probe's decision_threshold when present.
+  # Override this for budget/recall sweeps.
+  threshold: null
+
+paths:
+  problems: data_generation/qwen25_fhis/outputs/problems.jsonl
+  probe_retry_results: data_generation/qwen25_fhis/results/probe_retry_results.jsonl

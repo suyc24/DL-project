@@ -1,0 +1,35 @@
+{
+  "total": 100,
+  "compile_ok": 0,
+  "compile_ok_rate": 0.0,
+  "theorem_present": 0,
+  "theorem_present_rate": 0.0,
+  "ends_by_sorry_pattern": 0,
+  "ends_by_sorry_pattern_rate": 0.0,
+  "has_sorry": 0,
+  "has_sorry_rate": 0.0,
+  "by_trace_label": {
+    "trace_correct": {
+      "total": 50,
+      "compile_ok": 0,
+      "compile_ok_rate": 0.0,
+      "theorem_present": 0,
+      "theorem_present_rate": 0.0,
+      "ends_by_sorry_pattern": 0,
+      "ends_by_sorry_pattern_rate": 0.0,
+      "has_sorry": 0,
+      "has_sorry_rate": 0.0
+    },
+    "trace_incorrect": {
+      "total": 50,
+      "compile_ok": 0,
+      "compile_ok_rate": 0.0,
+      "theorem_present": 0,
+      "theorem_present_rate": 0.0,
+      "ends_by_sorry_pattern": 0,
+      "ends_by_sorry_pattern_rate": 0.0,
+      "has_sorry": 0,
+      "has_sorry_rate": 0.0
+    }
+  }
+}

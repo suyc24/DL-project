@@ -77,12 +77,15 @@ def load_probe(path: str | Path) -> Any:
     import __main__
 
     from fhis.train_probe import HiddenStateMLP, RecallBiasedLoss, TorchMLPProbe
+    from fhis.train_probe_v2 import LayerwiseProbeArtifact, LayerwiseProbeNet
 
     # Older MLP probe artifacts were saved from a `python -m` entrypoint and refer
     # to __main__. Register the classes so the artifact remains loadable.
     __main__.TorchMLPProbe = TorchMLPProbe
     __main__.HiddenStateMLP = HiddenStateMLP
     __main__.RecallBiasedLoss = RecallBiasedLoss
+    __main__.LayerwiseProbeArtifact = LayerwiseProbeArtifact
+    __main__.LayerwiseProbeNet = LayerwiseProbeNet
 
     payload = joblib.load(path)
     if isinstance(payload, dict) and "model" in payload:
@@ -90,12 +93,32 @@ def load_probe(path: str | Path) -> Any:
     return payload
 
 
-def score_feature(probe: Any, feature: torch.Tensor) -> float:
+def step_metadata_row(step_index: int, step_text: str) -> dict[str, Any]:
+    return {
+        "step_index": int(step_index),
+        "step_text": step_text,
+        "baselines": {
+            "step_index": int(step_index),
+            "step_length_chars": len(step_text),
+            "mean_token_logprob": 0.0,
+        },
+    }
+
+
+def score_feature(
+    probe: Any,
+    feature: torch.Tensor,
+    row: dict[str, Any] | None = None,
+) -> float:
     x = feature.float().cpu().numpy()[None, :]
+    if hasattr(probe, "predict_scores"):
+        try:
+            rows = [row] if row is not None else None
+            return float(probe.predict_scores(x, rows=rows)[0])
+        except TypeError:
+            return float(probe.predict_scores(x)[0])
     if hasattr(probe, "predict_proba"):
         return float(probe.predict_proba(x)[0, 1])
-    if hasattr(probe, "predict_scores"):
-        return float(probe.predict_scores(x)[0])
     raise TypeError("Probe object must expose predict_proba or predict_scores")
 
 
@@ -139,6 +162,11 @@ class OnlineStepRouter:
             threshold = getattr(self.probe, "decision_threshold", 0.5)
         self.threshold = float(threshold)
         self.formalizer = build_formalizer(config)
+        verification_cfg = config.get("verification", {})
+        reject_statuses = verification_cfg.get("reject_statuses", ["failed"])
+        if isinstance(reject_statuses, str):
+            reject_statuses = [reject_statuses]
+        self.reject_statuses = {str(status) for status in reject_statuses}
 
     def base_prompt(self, problem: str) -> str:
         return apply_qwen_chat_template(
@@ -261,7 +289,11 @@ class OnlineStepRouter:
 
                     current_step_text = steps[-1].text
                     feature = self.step_feature(prompt, candidate_completion, step_index)
-                    score = score_feature(self.probe, feature)
+                    score = score_feature(
+                        self.probe,
+                        feature,
+                        row=step_metadata_row(step_index, current_step_text),
+                    )
                     routed = score >= self.threshold
                     verification_status: str | None = None
                     lean_code: str | None = None
@@ -301,7 +333,7 @@ class OnlineStepRouter:
                     )
                     all_decisions.append(asdict(decision))
 
-                    if routed and verification_status != "proved":
+                    if routed and verification_status in self.reject_statuses:
                         if step_retry >= step_retry_budget:
                             terminated = True
                             break

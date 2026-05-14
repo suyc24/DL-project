@@ -21,9 +21,11 @@ class LeanVerificationResult:
 
 PLACEHOLDER_RE = re.compile(r"\b(?:sorry|admit)\b")
 TACTIC_REPLACEMENTS = (
+    "native_decide",
+    "omega",
+    "norm_num",
     "ring_nf",
     "ring",
-    "norm_num",
     "nlinarith",
     "linarith",
 )
@@ -41,10 +43,7 @@ def candidate_codes(code: str) -> list[tuple[str, str | None]]:
         return []
     if not PLACEHOLDER_RE.search(code):
         return [(code, None)]
-    return [
-        (PLACEHOLDER_RE.sub(tactic, code), tactic)
-        for tactic in TACTIC_REPLACEMENTS
-    ]
+    return [(PLACEHOLDER_RE.sub(tactic, code), tactic) for tactic in TACTIC_REPLACEMENTS]
 
 
 def ensure_text(value: str | bytes | None) -> str:
@@ -53,6 +52,68 @@ def ensure_text(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return value
+
+
+def _run_lean_candidate(
+    code: str,
+    workdir: str | Path | None,
+    executable: str,
+    timeout_s: float,
+    keep_file: bool,
+) -> LeanVerificationResult:
+    root = Path(workdir) if workdir else None
+    if root is not None and not root.exists():
+        return LeanVerificationResult(
+            status="formalization_failed",
+            returncode=None,
+            stdout="",
+            stderr=f"Lean workdir does not exist: {root}",
+        )
+
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        suffix=".lean",
+        delete=not keep_file,
+        dir=str(root) if root else None,
+    ) as f:
+        f.write(code)
+        f.write("\n")
+        f.flush()
+        path = Path(f.name)
+        try:
+            completed = subprocess.run(
+                [*lean_command(workdir=root, executable=executable), str(path)],
+                cwd=root,
+                check=False,
+                text=True,
+                capture_output=True,
+                timeout=timeout_s,
+            )
+        except FileNotFoundError as exc:
+            return LeanVerificationResult(
+                status="formalization_failed",
+                returncode=None,
+                stdout="",
+                stderr=f"Lean executable not found: {exc}",
+                lean_file=str(path) if keep_file else None,
+            )
+        except subprocess.TimeoutExpired as exc:
+            return LeanVerificationResult(
+                status="formalization_failed",
+                returncode=None,
+                stdout=ensure_text(exc.stdout),
+                stderr=ensure_text(exc.stderr) or "Lean verification timed out",
+                lean_file=str(path) if keep_file else None,
+            )
+
+        return LeanVerificationResult(
+            status="proved" if completed.returncode == 0 else "failed",
+            returncode=int(completed.returncode),
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+            lean_file=str(path) if keep_file else None,
+        )
 
 
 def verify_lean_code(
@@ -77,67 +138,53 @@ def verify_lean_code(
             stdout="",
             stderr="formalizer reported formalization_failed",
         )
+
     candidates = candidate_codes(code)
     if not candidates:
         return LeanVerificationResult(
             status="formalization_failed",
             returncode=None,
             stdout="",
-            stderr="Lean code contains an unfinished proof placeholder",
+            stderr="Lean code contains axiom or an unfinished proof placeholder",
         )
 
     last_result: LeanVerificationResult | None = None
     for candidate, tactic in candidates:
-        with tempfile.NamedTemporaryFile(
-            "w",
-            encoding="utf-8",
-            suffix=".lean",
-            delete=not keep_file,
-            dir=workdir if workdir else None,
-        ) as f:
-            f.write(candidate)
-            f.write("\n")
-            f.flush()
-            path = Path(f.name)
-            try:
-                completed = subprocess.run(
-                    [*lean_command(workdir=workdir, executable=executable), str(path)],
-                    cwd=workdir,
-                    check=False,
-                    text=True,
-                    capture_output=True,
-                    timeout=timeout_s,
-                )
-            except FileNotFoundError as exc:
-                return LeanVerificationResult(
-                    status="formalization_failed",
-                    returncode=None,
-                    stdout="",
-                    stderr=f"Lean executable not found: {exc}",
-                    lean_file=str(path) if keep_file else None,
-                )
-            except subprocess.TimeoutExpired as exc:
-                last_result = LeanVerificationResult(
-                    status="formalization_failed",
-                    returncode=None,
-                    stdout=ensure_text(exc.stdout),
-                    stderr=ensure_text(exc.stderr) or "Lean verification timed out",
-                    lean_file=str(path) if keep_file else None,
-                )
-                continue
-
-            status = "proved" if completed.returncode == 0 else "failed"
-            stdout = completed.stdout
-            if status == "proved" and tactic is not None:
-                stdout = f"placeholder filled with tactic: {tactic}\n{stdout}"
+        if PLACEHOLDER_RE.search(candidate):
             last_result = LeanVerificationResult(
-                status=status,
-                returncode=int(completed.returncode),
-                stdout=stdout,
-                stderr=completed.stderr,
-                lean_file=str(path) if keep_file else None,
+                status="formalization_failed",
+                returncode=None,
+                stdout="",
+                stderr="Lean code still contains an unfinished proof placeholder",
             )
-            if status == "proved":
-                return last_result
+            continue
+
+        result = _run_lean_candidate(
+            candidate,
+            workdir=workdir,
+            executable=executable,
+            timeout_s=timeout_s,
+            keep_file=keep_file,
+        )
+        if result.status == "proved":
+            if tactic is None:
+                return result
+            return LeanVerificationResult(
+                status="proved",
+                returncode=result.returncode,
+                stdout=f"placeholder filled with tactic: {tactic}\n{result.stdout}",
+                stderr=result.stderr,
+                lean_file=result.lean_file,
+            )
+        if tactic is not None and result.status == "failed":
+            result = LeanVerificationResult(
+                status="formalization_failed",
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                lean_file=result.lean_file,
+            )
+        last_result = result
+
     assert last_result is not None
     return last_result

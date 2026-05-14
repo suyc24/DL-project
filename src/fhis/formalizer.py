@@ -70,6 +70,19 @@ class NullFormalizer:
         return "-- formalization_failed"
 
 
+class LocalizedAtomicFormalizer:
+    def __init__(self, max_claims: int = 16) -> None:
+        self.max_claims = int(max_claims)
+
+    def formalize(self, request: FormalizationRequest) -> str:
+        from fhis.localized_verify import build_localized_lean_code
+
+        code = build_localized_lean_code(request.current_step, max_claims=self.max_claims)
+        if code is None:
+            return "-- formalization_failed: no supported localized atomic claim"
+        return code
+
+
 class TransformersFormalizer:
     def __init__(
         self,
@@ -183,6 +196,8 @@ def build_formalizer(config: dict) -> StepFormalizer:
     backend = "null" if backend_value is None else str(backend_value).lower()
     if backend in {"null", "none"}:
         return NullFormalizer()
+    if backend in {"localized", "atomic", "template"}:
+        return LocalizedAtomicFormalizer(max_claims=int(formalizer_cfg.get("max_claims", 16)))
     if backend in {"transformers", "hf", "stepfun"}:
         return TransformersFormalizer(
             model_name=str(formalizer_cfg.get("model", "StepFun-AI/StepFun-Formalizer-7B")),

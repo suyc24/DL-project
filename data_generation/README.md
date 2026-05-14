@@ -258,6 +258,45 @@ Problem-level split，避免同一道题的不同采样同时进入 train/test�
 | text tfidf logistic | 0.789 | 0.432 | 0.749 | 0.906 | 0.813 |
 | final wrongness probe | 0.767 | 0.269 | 0.509 | 0.778 | 0.567 |
 
+## 8. Probe-only 在线重试实验
+
+为了测试“不介入 Lean，只在 classifier 认为当前 step 可疑时反馈给模型重做”的上限，可以运行新的在线 router：
+
+```bash
+conda run -n fhis-data-gen python -m fhis.probe_retry_router \
+  --config data_generation/qwen25_fhis/configs/probe_retry.yaml \
+  --limit 20
+```
+
+策略：
+
+```text
+for each problem attempt, max 3 attempts:
+  generate one structured Step i
+  score Step i with the hidden-state probe
+  if score >= threshold:
+    tell the model the previous Step i is likely incorrect
+    ask it to redo only Step i
+    allow at most 3 total Step i attempts
+  if all Step i attempts are still flagged or unparsable:
+    restart the whole problem
+  if all problem attempts fail:
+    abstain
+```
+
+这个实验不调用 formalizer 或 Lean。每条 decision 会记录 `probe_score`、
+`flagged_for_retry`、`feedback_used` 和 `action`。汇总命令：
+
+```bash
+conda run -n fhis-data-gen python -m fhis.evaluate_online \
+  --config data_generation/qwen25_fhis/configs/probe_retry.yaml \
+  --output data_generation/qwen25_fhis/results/probe_retry_summary.json
+```
+
+建议至少和两个数对比：同一题集的 no-verification pass@1，以及
+`online_verify.yaml` 下的 selective Lean router。若要做 budget sweep，直接改
+`router.threshold`，或用验证集分位数把 `classifier_flag_rate` 对齐到 10/20/30/50%。
+
 单层 sweep：
 
 | layer | AUROC | AUPRC | top 30% budget coverage |
@@ -423,12 +462,12 @@ python -m fhis.online_router \
   --limit 10
 ```
 
-`online_verify.yaml` 默认使用 conservative `formalizer.backend: null`，只用于
-检查生成-probe-route-terminate 管线。实际评估时应切到 `backend: stepfun`
-或 `backend: transformers`，并指向本地可用的 StepFun-Formalizer-7B 模型。
-当前 online policy 是：被 probe route 的 step 若 Lean 未通过，先在相同已接受
-prefix 下重生成当前 step，默认重试 2 次；当前 step 仍不通过时才放弃整条
-trace attempt，并进入下一次整题重采样。
+`online_verify.yaml` 默认使用 `formalizer.backend: localized`，把 Lean 作为
+局部算术 veto：只有明确 refute 的 supported atom 才触发当前 step 重试。
+StepFun/transformers autoformalizer 保留给单独实验，不再作为默认 online backend。
+当前 online policy 是：被 probe route 的 step 若命中 reject status，先在相同
+已接受 prefix 下重生成当前 step，默认重试 2 次；当前 step 仍不通过时才放弃
+整条 trace attempt，并进入下一次整题重采样。
 
 统计在线闭环的 answer rate、rough solve rate 和 Lean 调用成本：
 
@@ -436,6 +475,75 @@ trace attempt，并进入下一次整题重采样。
 python -m fhis.evaluate_online \
   --config data_generation/qwen25_fhis/configs/online_verify.yaml
 ```
+
+### Localized atomic Lean backend
+
+直接让 LLM 把整段自然语言 step autoformalize 成 Lean theorem 的成功率很低；
+StepFun smoke 中 routed step 主要卡在 `formalization_failed` 或 `sorry` proof。
+当前默认改为更保守的 localized atomic backend：
+
+```text
+formalizer.backend: localized
+verification.reject_statuses: [failed]
+```
+
+策略变成 Lean-veto，而不是 Lean-required-proof：
+
+```text
+probe routes a suspicious step
+  extract supported atomic claims from the current step
+  examples: exact arithmetic, rational comparisons, sqrt decimal approximations
+  emit Lean core/Rat `native_decide` checks
+  if Lean refutes a supported atom -> retry/reject this step
+  if no supported atom or formalization_failed -> neutral, do not reject only for that reason
+```
+
+这样解决的是 online 接入的主要工程瓶颈：不再要求把“整个局部推理段”
+忠实形式化；先覆盖高精度、可判定、常见的局部算术错误。这个 verifier
+不会声称证明了整步，只会在明确发现局部数值断言为假时 veto。
+
+相关代码：
+
+| 路径 | 用途 |
+|---|---|
+| `src/fhis/localized_verify.py` | 抽取 arithmetic / sqrt-approx atom 并生成 Lean `native_decide` |
+| `src/fhis/formalizer.py` | `backend: localized` 接入 online router |
+| `src/fhis/online_router.py` | `verification.reject_statuses` 控制 Lean-veto 策略 |
+| `scripts/evaluate_localized_atomic_verifier.py` | 统计 coverage / false atom examples / Lean smoke |
+
+本地实验命令：
+
+```bash
+python scripts/evaluate_localized_atomic_verifier.py \
+  --summary-output data_generation/qwen25_fhis/results/localized_atomic_summary_all.json
+
+python scripts/evaluate_localized_atomic_verifier.py \
+  --limit-traces 80 \
+  --verify \
+  --verify-limit-steps 20 \
+  --summary-output data_generation/qwen25_fhis/results/localized_atomic_verify_smoke_80.json
+```
+
+在当前可用的 `generated_traces.jsonl` 上，localized extractor 的全量统计为：
+
+| 指标 | 数值 |
+|---|---:|
+| traces | 2696 |
+| steps | 15003 |
+| steps with supported atoms | 3501 |
+| step atom coverage | 23.34% |
+| extracted atoms | 7919 |
+| false atoms | 645 |
+| steps with false atoms | 429 |
+| false-atom step rate | 2.86% |
+
+按 rough answer 粗分，rough-wrong trace 的 false-atom step rate 为 3.40%，
+rough-correct trace 为 1.70%。`rough_final_correct` 不是最终 FHIS 标签，只能作诊断；
+本地 checkout 中 clean labels 是 Git LFS pointer，因此这次 summary 的 FHIS-position
+字段为 `unlabeled`。Lean smoke 对前 20 个含 atom 的 step 实际调用 Lean，
+`verify_statuses = {"proved": 20}`。单元测试覆盖了 true/false arithmetic、
+sqrt 近似、subscript/function 误抽取过滤、remainder/approx/factorial 上下文过滤、
+contradiction witness 过滤，以及 `sorry` placeholder 的 safe tactic retry。
 
 查看 summary：
 

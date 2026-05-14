@@ -1,0 +1,34 @@
+seed: 20260505
+
+model:
+  name: Qwen/Qwen2.5-Math-7B-Instruct
+  tensor_parallel_size: 1
+  dtype: bfloat16
+  gpu_memory_utilization: 0.90
+  max_model_len: 4096
+  layers: [6, 13, 20, 27]
+  enable_thinking: true
+
+online:
+  retry_budget: 1
+  max_steps: 16
+  max_step_new_tokens: 512
+  max_final_new_tokens: 256
+  temperature: 0.7
+  top_p: 0.95
+  completion_prefix: "Step 1:"
+  device: auto
+
+probe_retry:
+  max_step_attempts: 2
+  max_rejected_step_chars: 1200
+  accept_best_after_max_step_attempts: true
+  accept_best_margin: 0.05
+
+router:
+  probe_model: classifier/v2_runs/sweep_scalars/scalars_c5_p4/probe.joblib
+  threshold: 0.5
+
+paths:
+  problems: data_generation/qwen25_fhis/outputs/online_smoke_10_problems.jsonl
+  probe_retry_results: classifier/v2_runs/online_smoke/scalars_c5_p4_retry_t05_results.jsonl

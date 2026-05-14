@@ -32,11 +32,18 @@ router:
   # budget sweeps, e.g. 0.10/0.20/0.30 verification rates calibrated offline.
   threshold: null
 
+verification:
+  # Lean is used as a veto: retry only when a supported localized claim is
+  # explicitly refuted. formalization_failed/not_applicable are not rejection
+  # signals because they usually mean the step was outside the local checker.
+  reject_statuses: [failed]
+
 formalizer:
-  # Use "stepfun" or "transformers" with a local/HF StepFun-Formalizer-7B model
-  # when available. The null backend is conservative: every routed step fails
-  # formalization, which is useful for dry-run plumbing tests but not evaluation.
-  backend: null
+  # The localized backend extracts arithmetic/approximation atoms from the
+  # current step and emits small Lean native_decide checks. Use "stepfun" or
+  # "transformers" only for separate autoformalization experiments.
+  backend: localized
+  max_claims: 16
   model: StepFun-AI/StepFun-Formalizer-7B
   device: auto
   dtype: auto
