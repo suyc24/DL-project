@@ -1,0 +1,14 @@
+seed: 20260516
+model:
+  name: /root/shared-nvme/models/Qwen2.5-Math-7B-Instruct
+  layers:
+    - 6
+    - 13
+    - 20
+    - 27
+labels:
+  keep_confidence: high
+paths:
+  generated_traces: classifier/v2_runs/label_expansion/targeted_same_problem_20260516_0745/manual_label_traces.jsonl
+  labels: classifier/v2_runs/label_expansion/targeted_same_problem_20260516_0745/manual_labels_high.jsonl
+  hidden_states: classifier/v2_runs/label_expansion/targeted_same_problem_20260516_0745/manual_step_hidden_states.pt

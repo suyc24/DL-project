@@ -1,0 +1,220 @@
+{
+  "complete_problem_batches_of_4": 500,
+  "confidence_counts": {
+    "high": 1934,
+    "low": 23,
+    "medium": 43
+  },
+  "created_at": "2026-05-17T00:07:28",
+  "duplicate_conflicts": [
+    {
+      "signatures": [
+        [
+          true,
+          4,
+          "optimization_error",
+          "high"
+        ],
+        [
+          true,
+          4,
+          "invalid enumeration/optimization",
+          "high"
+        ],
+        [
+          true,
+          4,
+          "invalid optimization/enumeration",
+          "high"
+        ]
+      ],
+      "sources": [
+        [
+          "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+          129
+        ],
+        [
+          "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+          131
+        ],
+        [
+          "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+          133
+        ]
+      ],
+      "trace_id": "OE_TO_maths_en_COMP-545::v25train-natural-s0-sample-1"
+    },
+    {
+      "signatures": [
+        [
+          true,
+          4,
+          "definition error",
+          "high"
+        ],
+        [
+          true,
+          4,
+          "definition misapplied",
+          "high"
+        ],
+        [
+          true,
+          4,
+          "definition_error",
+          "high"
+        ]
+      ],
+      "sources": [
+        [
+          "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+          130
+        ],
+        [
+          "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+          132
+        ],
+        [
+          "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+          134
+        ]
+      ],
+      "trace_id": "OE_TO_maths_en_COMP-495::v25train-natural-s0-sample-1"
+    }
+  ],
+  "duplicate_trace_ids_in_sources": {
+    "OE_TO_maths_en_COMP-434::v25train-natural-s0-sample-2": [
+      [
+        "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_2.jsonl",
+        61
+      ],
+      [
+        "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_2.jsonl",
+        62
+      ],
+      [
+        "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_2.jsonl",
+        63
+      ]
+    ],
+    "OE_TO_maths_en_COMP-495::v25train-natural-s0-sample-1": [
+      [
+        "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+        130
+      ],
+      [
+        "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+        132
+      ],
+      [
+        "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+        134
+      ]
+    ],
+    "OE_TO_maths_en_COMP-545::v25train-natural-s0-sample-1": [
+      [
+        "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+        129
+      ],
+      [
+        "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+        131
+      ],
+      [
+        "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+        133
+      ]
+    ]
+  },
+  "expected_trace_rows": 2000,
+  "expected_unique_trace_ids": 2000,
+  "extra_trace_ids": [],
+  "fhis_counts": {
+    "non_null": 1273,
+    "null": 727
+  },
+  "final_correct_counts": {
+    "False": 1141,
+    "True": 859
+  },
+  "incomplete_problem_batches": {},
+  "invalid_source_rows": [],
+  "label_source_counts": {
+    "direct_assistant_fhis": 36,
+    "direct_assistant_fhis_batch": 1953,
+    "direct_assistant_fhis_batch_retry": 2,
+    "direct_assistant_fhis_manual_gapfill": 9
+  },
+  "labeler_counts": {
+    "assistant_direct": 45,
+    "local_codex_batch": 1955
+  },
+  "missing_trace_ids": [],
+  "num_steps_mismatches": [],
+  "output_file": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/fhis_labels_assistant_merged_2000.jsonl",
+  "output_rows": 2000,
+  "passed": true,
+  "post_merge_schema_errors": [],
+  "problem_count": 500,
+  "raw_label_rows_read": 2006,
+  "source_files": [
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/fhis_labels_assistant.jsonl",
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_0.jsonl",
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_2.jsonl",
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_3.jsonl",
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_4.jsonl",
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_5.jsonl",
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_6.jsonl",
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_7.jsonl",
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/missing_11_labels.jsonl",
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/missing_9_manual_labels.jsonl"
+  ],
+  "source_row_counts": {
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/fhis_labels_assistant.jsonl": 48,
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_0.jsonl": 240,
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl": 248,
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_2.jsonl": 239,
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_3.jsonl": 244,
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_4.jsonl": 244,
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_5.jsonl": 244,
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_6.jsonl": 244,
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_7.jsonl": 244,
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/missing_11_labels.jsonl": 2,
+    "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/missing_9_manual_labels.jsonl": 9
+  },
+  "top_error_type_counts": {
+    "None": 724,
+    "algebra": 7,
+    "algebra_error": 35,
+    "arithmetic": 9,
+    "arithmetic_error": 9,
+    "calculation_error": 12,
+    "case_analysis_error": 6,
+    "computation": 9,
+    "counting error": 6,
+    "counting_error": 37,
+    "double_counting_pairs": 4,
+    "false_assumption": 5,
+    "false_claim": 16,
+    "false_constraint": 6,
+    "false_divisibility_claim": 5,
+    "false_generalization": 5,
+    "false_geometric_claim": 11,
+    "geometry_misinterpretation": 7,
+    "incorrect_area_formula": 5,
+    "invalid assumption": 5,
+    "invalid_construction": 7,
+    "invalid_coordinate_setup": 9,
+    "invalid_inference": 9,
+    "misinterpreted condition": 5,
+    "misinterpreted_condition": 14,
+    "misread_problem": 5,
+    "optimization_error": 6,
+    "unjustified_assumption": 7,
+    "unsupported_assumption": 15,
+    "unsupported_false_claim": 5
+  },
+  "trace_file": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/generated_traces.jsonl",
+  "unique_output_trace_ids": 2000
+}

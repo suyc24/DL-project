@@ -1,0 +1,36 @@
+{
+  "seed_strict_missed_traces": 30,
+  "seed_strict_missed_problems": 20,
+  "same_problem_total_traces": 80,
+  "bucket_counts": {
+    "same_problem_unlabeled_needs_annotation": 10,
+    "same_problem_high_conf_wrong_positive": 30,
+    "same_problem_recovered_error_positive": 2,
+    "seed_strict_missed_positive": 30,
+    "same_problem_high_conf_correct_negative": 8
+  },
+  "already_in_expansion_count": 2,
+  "annotation_candidate_count": 10,
+  "problem_candidate_counts": {
+    "OE_TO_maths_en_COMP-104": 4,
+    "OE_TO_maths_en_COMP-111": 4,
+    "OE_TO_maths_en_COMP-2": 4,
+    "OE_TO_maths_en_COMP-20": 4,
+    "OE_TO_maths_en_COMP-206": 4,
+    "OE_TO_maths_en_COMP-227": 4,
+    "OE_TO_maths_en_COMP-268": 4,
+    "OE_TO_maths_en_COMP-307": 4,
+    "OE_TO_maths_en_COMP-315": 4,
+    "OE_TO_maths_en_COMP-391": 4,
+    "OE_TO_maths_en_COMP-404": 4,
+    "OE_TO_maths_en_COMP-435": 4,
+    "OE_TO_maths_en_COMP-436": 4,
+    "OE_TO_maths_en_COMP-437": 4,
+    "OE_TO_maths_en_COMP-480": 4,
+    "OE_TO_maths_en_COMP-562": 4,
+    "OE_TO_maths_en_COMP-611": 4,
+    "OE_TO_maths_en_COMP-640": 4,
+    "OE_TO_maths_en_COMP-652": 4,
+    "OE_TO_maths_en_COMP-75": 4
+  }
+}

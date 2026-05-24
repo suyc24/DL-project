@@ -1,0 +1,63 @@
+{
+  "thresholds": {
+    "v22_p15_cal_first": [
+      "score_v22_p15",
+      0.09307900535395942
+    ],
+    "v22_p15_hard_direct_step": [
+      "score_v22_p15",
+      0.0816
+    ],
+    "avg_50_50_hard_direct": [
+      "score_avg_50_50",
+      0.07629286442415803
+    ],
+    "max_cal_first": [
+      "score_max_v22_v23",
+      0.09307900535395942
+    ]
+  },
+  "common_rows": 1522,
+  "example_types": {
+    "strong_prefhis_negative": 402,
+    "fhis_positive": 203,
+    "strong_correct_negative": 784,
+    "mined_hard_negative": 99,
+    "hard_fhis_false_negative": 34
+  },
+  "strict_missed_positive_count": 30,
+  "near_missed_positive_count": 6,
+  "prefhis_false_stop_count": 95,
+  "correct_trace_false_stop_count": 106,
+  "strict_missed_by_example_type": {
+    "fhis_positive": 22,
+    "hard_fhis_false_negative": 8
+  },
+  "strict_missed_by_step": {
+    "3": 3,
+    "4": 1,
+    "1": 10,
+    "2": 14,
+    "6": 1,
+    "8": 1
+  },
+  "prefhis_by_step": {
+    "3": 14,
+    "1": 44,
+    "2": 30,
+    "4": 3,
+    "8": 1,
+    "7": 1,
+    "5": 2
+  },
+  "correct_fp_by_step": {
+    "2": 31,
+    "1": 29,
+    "6": 10,
+    "4": 11,
+    "3": 15,
+    "8": 1,
+    "5": 7,
+    "7": 2
+  }
+}

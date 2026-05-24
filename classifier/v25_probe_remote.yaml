@@ -1,0 +1,59 @@
+seed: 20260517
+
+model:
+  name: /root/shared-nvme/models/Qwen2.5-Math-7B-Instruct
+  tensor_parallel_size: 1
+  dtype: auto
+  gpu_memory_utilization: 0.90
+  max_model_len: 4096
+  layers: [6, 13, 20, 27]
+
+labels:
+  annotator_model: gpt-5.5
+  keep_confidence: high
+  max_traces: null
+
+split:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+probe_v2:
+  use_scalars: true
+  layer_embed_dim: 256
+  mlp_dims: [512, 128]
+  dropout: 0.20
+  lr: 0.0003
+  weight_decay: 0.0001
+  batch_size: 256
+  max_epochs: 120
+  patience: 15
+  ranking_weight: 0.25
+  ranking_margin: 1.0
+  ranking_pairs_per_epoch: 4096
+  monitor: auprc
+  positive_recall_target: 0.99
+
+bad_step_hazard_v21:
+  use_scalars: true
+  layer_embed_dim: 256
+  sequence_hidden_dim: 256
+  step_mlp_dim: 256
+  sequence_num_layers: 2
+  dropout: 0.20
+  lr: 0.0002
+  weight_decay: 0.0002
+  trace_batch_size: 24
+  eval_trace_batch_size: 64
+  max_epochs: 100
+  patience: 14
+  grad_clip: 1.0
+
+paths:
+  problems: classifier/v2_runs/label_expansion/v25_train_2000_20260516/problems.jsonl
+  generated_traces: classifier/v2_runs/label_expansion/v25_train_2000_20260516/generated_traces.jsonl
+  labels: classifier/v2_runs/label_expansion/v25_train_2000_20260516/fhis_labels_assistant_merged_2000.jsonl
+  hidden_states: classifier/v2_runs/bad_step_v25_train2000/step_hidden_states.pt
+  metrics: classifier/v2_runs/bad_step_v25_train2000/probe_metrics.json
+  layer_sweep: classifier/v2_runs/bad_step_v25_train2000/layer_sweep.csv
+  probe_model: classifier/v2_runs/bad_step_v25_train2000/hidden_mlp_probe.joblib

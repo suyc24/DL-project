@@ -1,0 +1,8 @@
+{
+  "num_unlabeled_trace_candidates": 304,
+  "num_problems": 181,
+  "rough_true": 0,
+  "rough_false": 0,
+  "rough_none": 304,
+  "output_labels": "classifier/v2_runs/label_expansion/v25_existing_unlabeled_20260516/labels.jsonl"
+}

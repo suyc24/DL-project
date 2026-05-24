@@ -1,0 +1,29 @@
+{
+  "selected": 166,
+  "ids_first10": [
+    "OE_TO_maths_en_COMP-10::sample-3",
+    "OE_TO_maths_en_COMP-100::sample-1",
+    "OE_TO_maths_en_COMP-100::sample-2",
+    "OE_TO_maths_en_COMP-100::sample-3",
+    "OE_TO_maths_en_COMP-105::sample-0",
+    "OE_TO_maths_en_COMP-105::sample-2",
+    "OE_TO_maths_en_COMP-107::sample-1",
+    "OE_TO_maths_en_COMP-108::sample-1",
+    "OE_TO_maths_en_COMP-11::sample-0",
+    "OE_TO_maths_en_COMP-11::sample-1"
+  ],
+  "first_invalid_counts": {
+    "8": 4,
+    "5": 20,
+    "4": 15,
+    "2": 47,
+    "1": 29,
+    "3": 38,
+    "6": 4,
+    "7": 4,
+    "12": 1,
+    "10": 1,
+    "9": 2,
+    "11": 1
+  }
+}

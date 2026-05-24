@@ -219,7 +219,9 @@ def training_sample_weights(
 ) -> np.ndarray:
     weights = np.ones(len(rows), dtype=np.float32)
     for idx, row in enumerate(rows):
-        if int(y[idx]) == 1:
+        if "sample_weight" in row:
+            weights[idx] = float(row["sample_weight"])
+        elif int(y[idx]) == 1:
             weights[idx] = float(positive_weight)
         elif bool(row.get("trace_final_correct", False)):
             weights[idx] = float(correct_negative_weight)

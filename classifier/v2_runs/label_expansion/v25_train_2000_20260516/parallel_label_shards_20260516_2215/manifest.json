@@ -1,0 +1,63 @@
+{
+  "num_shards": 8,
+  "existing_done": 48,
+  "remaining": 1952,
+  "shards": [
+    {
+      "shard": 0,
+      "traces": 244,
+      "traces_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/traces_shard_0.jsonl",
+      "labels_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_0.jsonl",
+      "log_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/label_shard_0.log"
+    },
+    {
+      "shard": 1,
+      "traces": 244,
+      "traces_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/traces_shard_1.jsonl",
+      "labels_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_1.jsonl",
+      "log_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/label_shard_1.log"
+    },
+    {
+      "shard": 2,
+      "traces": 244,
+      "traces_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/traces_shard_2.jsonl",
+      "labels_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_2.jsonl",
+      "log_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/label_shard_2.log"
+    },
+    {
+      "shard": 3,
+      "traces": 244,
+      "traces_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/traces_shard_3.jsonl",
+      "labels_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_3.jsonl",
+      "log_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/label_shard_3.log"
+    },
+    {
+      "shard": 4,
+      "traces": 244,
+      "traces_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/traces_shard_4.jsonl",
+      "labels_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_4.jsonl",
+      "log_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/label_shard_4.log"
+    },
+    {
+      "shard": 5,
+      "traces": 244,
+      "traces_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/traces_shard_5.jsonl",
+      "labels_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_5.jsonl",
+      "log_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/label_shard_5.log"
+    },
+    {
+      "shard": 6,
+      "traces": 244,
+      "traces_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/traces_shard_6.jsonl",
+      "labels_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_6.jsonl",
+      "log_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/label_shard_6.log"
+    },
+    {
+      "shard": 7,
+      "traces": 244,
+      "traces_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/traces_shard_7.jsonl",
+      "labels_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/labels_shard_7.jsonl",
+      "log_path": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/parallel_label_shards_20260516_2215/label_shard_7.log"
+    }
+  ]
+}

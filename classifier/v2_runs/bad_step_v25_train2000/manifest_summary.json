@@ -1,0 +1,280 @@
+{
+  "calibration_pct": 15,
+  "complete_problem_batches_of_4": 447,
+  "dropped_trace_counts": {
+    "confidence_low": 23,
+    "confidence_medium": 43
+  },
+  "example_type_counts": {
+    "fhis_positive": 1219,
+    "strong_correct_negative": 3907,
+    "strong_prefhis_negative": 2406
+  },
+  "extra_label_trace_ids": [],
+  "hard_dev_pct": 15,
+  "incomplete_problem_batch_count": 52,
+  "incomplete_problem_batches_sample": {
+    "OE_TO_maths_en_COMP-122": [
+      "OE_TO_maths_en_COMP-122::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-122::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-122::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-124": [
+      "OE_TO_maths_en_COMP-124::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-124::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-124::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-125": [
+      "OE_TO_maths_en_COMP-125::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-125::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-125::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-15": [
+      "OE_TO_maths_en_COMP-15::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-15::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-15::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-17": [
+      "OE_TO_maths_en_COMP-17::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-17::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-17::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-170": [
+      "OE_TO_maths_en_COMP-170::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-170::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-170::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-19": [
+      "OE_TO_maths_en_COMP-19::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-19::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-19::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-201": [
+      "OE_TO_maths_en_COMP-201::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-201::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-248": [
+      "OE_TO_maths_en_COMP-248::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-248::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-264": [
+      "OE_TO_maths_en_COMP-264::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-264::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-264::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-266": [
+      "OE_TO_maths_en_COMP-266::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-266::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-266::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-269": [
+      "OE_TO_maths_en_COMP-269::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-269::v25train-natural-s0-sample-1"
+    ],
+    "OE_TO_maths_en_COMP-27": [
+      "OE_TO_maths_en_COMP-27::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-27::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-27::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-284": [
+      "OE_TO_maths_en_COMP-284::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-284::v25train-natural-s0-sample-1"
+    ],
+    "OE_TO_maths_en_COMP-31": [
+      "OE_TO_maths_en_COMP-31::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-31::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-31::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-323": [
+      "OE_TO_maths_en_COMP-323::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-323::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-323::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-330": [
+      "OE_TO_maths_en_COMP-330::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-330::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-330::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-337": [
+      "OE_TO_maths_en_COMP-337::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-337::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-368": [
+      "OE_TO_maths_en_COMP-368::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-368::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-368::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-379": [
+      "OE_TO_maths_en_COMP-379::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-379::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-379::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-382": [
+      "OE_TO_maths_en_COMP-382::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-382::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-382::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-399": [
+      "OE_TO_maths_en_COMP-399::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-399::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-399::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-413": [
+      "OE_TO_maths_en_COMP-413::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-413::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-420": [
+      "OE_TO_maths_en_COMP-420::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-420::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-420::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-43": [
+      "OE_TO_maths_en_COMP-43::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-43::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-43::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-433": [
+      "OE_TO_maths_en_COMP-433::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-433::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-439": [
+      "OE_TO_maths_en_COMP-439::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-439::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-451": [
+      "OE_TO_maths_en_COMP-451::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-451::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-451::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-468": [
+      "OE_TO_maths_en_COMP-468::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-468::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-468::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-470": [
+      "OE_TO_maths_en_COMP-470::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-470::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-470::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-474": [
+      "OE_TO_maths_en_COMP-474::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-474::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-474::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-49": [
+      "OE_TO_maths_en_COMP-49::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-49::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-49::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-496": [
+      "OE_TO_maths_en_COMP-496::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-496::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-496::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-5": [
+      "OE_TO_maths_en_COMP-5::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-5::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-5::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-508": [
+      "OE_TO_maths_en_COMP-508::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-508::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-508::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-509": [
+      "OE_TO_maths_en_COMP-509::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-509::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-509::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-511": [
+      "OE_TO_maths_en_COMP-511::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-511::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-511::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-514": [
+      "OE_TO_maths_en_COMP-514::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-514::v25train-natural-s0-sample-1"
+    ],
+    "OE_TO_maths_en_COMP-516": [
+      "OE_TO_maths_en_COMP-516::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-516::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-516::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-519": [
+      "OE_TO_maths_en_COMP-519::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-519::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-519::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-545": [
+      "OE_TO_maths_en_COMP-545::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-545::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-545::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-550": [
+      "OE_TO_maths_en_COMP-550::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-550::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-550::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-572": [
+      "OE_TO_maths_en_COMP-572::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-572::v25train-natural-s0-sample-1"
+    ],
+    "OE_TO_maths_en_COMP-577": [
+      "OE_TO_maths_en_COMP-577::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-577::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-601": [
+      "OE_TO_maths_en_COMP-601::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-601::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-601::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-608": [
+      "OE_TO_maths_en_COMP-608::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-608::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-608::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-611": [
+      "OE_TO_maths_en_COMP-611::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-611::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-611::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-63": [
+      "OE_TO_maths_en_COMP-63::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-63::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-63::v25train-natural-s0-sample-3"
+    ],
+    "OE_TO_maths_en_COMP-65": [
+      "OE_TO_maths_en_COMP-65::v25train-natural-s0-sample-0",
+      "OE_TO_maths_en_COMP-65::v25train-natural-s0-sample-2"
+    ],
+    "OE_TO_maths_en_COMP-69": [
+      "OE_TO_maths_en_COMP-69::v25train-natural-s0-sample-1",
+      "OE_TO_maths_en_COMP-69::v25train-natural-s0-sample-2",
+      "OE_TO_maths_en_COMP-69::v25train-natural-s0-sample-3"
+    ]
+  },
+  "keep_confidence": "high",
+  "label_rows": 2000,
+  "manifest_problem_count": 499,
+  "manifest_rows": 7532,
+  "manifest_trace_count": 1932,
+  "missing_label_trace_ids": [],
+  "split_counts": {
+    "calibration": 1250,
+    "hard_dev": 1552,
+    "train": 4730
+  },
+  "target_bad_step_counts": {
+    "0": 6313,
+    "1": 1219
+  },
+  "trace_rows": 2000,
+  "train_pct": 70,
+  "unique_label_trace_ids": 2000,
+  "unique_trace_ids": 2000,
+  "weights": {
+    "fhis_positive": 4.0,
+    "strong_correct_negative": 0.75,
+    "strong_prefhis_negative": 1.0
+  }
+}

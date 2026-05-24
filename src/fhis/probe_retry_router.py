@@ -144,7 +144,28 @@ class ProbeRetryRouter:
         )
         if not previous:
             previous = "(none)"
-        prompt = f"""{STEP_PROMPT.format(problem=str(problem["problem"]).strip())}
+        prompt_style = str(self.retry_cfg.get("retry_prompt_style", "default"))
+        if prompt_style == "strict_step":
+            prompt = f"""{STEP_PROMPT.format(problem=str(problem["problem"]).strip())}
+
+Accepted solution so far:
+{previous}
+
+The previous draft of Step {step_index} is likely incorrect:
+Step {step_index}: {rejected}
+
+Rewrite Step {step_index} only.
+Rules:
+- Output exactly one complete corrected Step {step_index}.
+- Do not repeat any accepted previous step.
+- Do not include a preamble, critique, or explanation outside Step {step_index}.
+- Do not output Step {step_index + 1}.
+- Do not output the final answer unless Step {step_index} itself completes the solution.
+- Keep the step concise, but include all reasoning needed for this step.
+
+Step {step_index}:"""
+        else:
+            prompt = f"""{STEP_PROMPT.format(problem=str(problem["problem"]).strip())}
 
 Accepted solution so far:
 {previous}

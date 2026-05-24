@@ -1,0 +1,75 @@
+{
+  "clean_eval_summary": {
+    "avg_steps": 4.964,
+    "dataset_counts": {
+      "EleutherAI/hendrycks_math": 500
+    },
+    "duplicate_trace_ids": [],
+    "max_steps": 17,
+    "min_steps": 1,
+    "missing_problem_ids": 0,
+    "missing_trace_ids": 0,
+    "num_duplicate_trace_ids": 0,
+    "num_step_parseable": 500,
+    "num_traces": 500,
+    "num_unique_problem_ids": 125,
+    "num_unique_trace_ids": 500,
+    "problem_trace_count_max": 4,
+    "problem_trace_count_min": 4,
+    "rough_final_correct_counts": {
+      "False": 154,
+      "None": 17,
+      "True": 329
+    },
+    "split": "clean_eval_natural",
+    "subset_counts_top20": {
+      "algebra": 160,
+      "counting_and_probability": 52,
+      "geometry": 48,
+      "intermediate_algebra": 112,
+      "number_theory": 76,
+      "precalculus": 52
+    }
+  },
+  "clean_eval_traces": "classifier/v2_runs/label_expansion/v25_clean_eval_natural_20260516/generated_traces.jsonl",
+  "content_policy_note": "This script writes metadata-only queues and blank label templates by default. It intentionally excludes problem, prompt, completion, steps, reference_solution, and token fields.",
+  "leakage_check": {
+    "clean_eval_is_held_out": true,
+    "train_clean_eval_problem_overlap_count": 0,
+    "train_clean_eval_problem_overlap_sample": []
+  },
+  "outputs": {
+    "clean_eval_blank_labels": "clean_eval_blank_labels.jsonl",
+    "clean_eval_queue_metadata": "clean_eval_queue_metadata.jsonl",
+    "train_blank_labels": "train_blank_labels.jsonl",
+    "train_queue_metadata": "train_queue_metadata.jsonl"
+  },
+  "train_summary": {
+    "avg_steps": 5.826,
+    "dataset_counts": {
+      "Hothan/OlympiadBench": 2000
+    },
+    "duplicate_trace_ids": [],
+    "max_steps": 50,
+    "min_steps": 1,
+    "missing_problem_ids": 0,
+    "missing_trace_ids": 0,
+    "num_duplicate_trace_ids": 0,
+    "num_step_parseable": 2000,
+    "num_traces": 2000,
+    "num_unique_problem_ids": 500,
+    "num_unique_trace_ids": 2000,
+    "problem_trace_count_max": 4,
+    "problem_trace_count_min": 4,
+    "rough_final_correct_counts": {
+      "False": 1139,
+      "None": 144,
+      "True": 717
+    },
+    "split": "train_expansion",
+    "subset_counts_top20": {
+      "OE_TO_maths_en_COMP": 2000
+    }
+  },
+  "train_traces": "classifier/v2_runs/label_expansion/v25_train_2000_20260516/generated_traces.jsonl"
+}

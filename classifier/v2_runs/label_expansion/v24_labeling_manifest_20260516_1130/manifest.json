@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-05-16 11:30 CST",
+  "requires_explicit_user_approval": true,
+  "approval_scope": "Codex/OpenAI adjudication of local trace contents and persistence of FHIS labels for listed trace candidates only.",
+  "repair_batch": {
+    "purpose": "Track A targeted repair diagnostic; hard-dev problem overlap; not unbiased evaluation.",
+    "input_file": "/home/suyc24/Python/DL project/classifier/v2_runs/label_expansion/targeted_same_problem_20260516_0745/annotation_candidate_preview.jsonl",
+    "count": 10,
+    "intended_output_labels": "classifier/v2_runs/label_expansion/targeted_same_problem_20260516_0745/manual_labels_high.jsonl"
+  },
+  "clean_eval_batch": {
+    "purpose": "Track B problem-disjoint clean eval candidate labeling; use for unbiased evaluation after label creation.",
+    "input_file": "/home/suyc24/Python/DL project/classifier/v2_runs/label_expansion/clean_eval_candidates_20260516_1045/clean_eval_candidate_queue.jsonl",
+    "count": 40,
+    "intended_output_labels": "classifier/v2_runs/label_expansion/clean_eval_candidates_20260516_1045/clean_eval_labels.jsonl"
+  },
+  "post_approval_steps": [
+    "Persist labels for approved batches only.",
+    "For repair batch, treat as targeted/leaky examples and never claim hard-dev generalization.",
+    "For clean eval batch, keep labels out of training and threshold selection.",
+    "Extract hidden states on remote only for training additions, using /root/shared-nvme/models/Qwen2.5-Math-7B-Instruct.",
+    "Train v2.4 targeted repair variant only after Track A labels exist; evaluate Track B separately."
+  ]
+}

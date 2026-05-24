@@ -1,0 +1,30 @@
+{
+  "label_file": "classifier/v2_runs/label_expansion/v25_clean_eval_natural_20260516/fhis_labels_assistant_merged_500.jsonl",
+  "completion_file": "classifier/v2_runs/label_expansion/v25_clean_eval_natural_20260516/fhis_labels_assistant_completion_284.jsonl",
+  "seed_rows": 216,
+  "completion_rows": 284,
+  "rows": 500,
+  "unique_trace_ids": 500,
+  "unique_problem_ids": 125,
+  "complete_4_trace_problem_batches": 125,
+  "partial_problem_batches": {},
+  "errors": [],
+  "final_correct": {
+    "True": 360,
+    "False": 140
+  },
+  "confidence": {
+    "high": 493,
+    "medium": 7
+  },
+  "fhis_non_null": 157,
+  "correct_with_fhis": 17,
+  "incorrect_with_fhis": 140,
+  "rough_final_correct": {
+    "True": 329,
+    "False": 154,
+    "None": 17
+  },
+  "clean_eval_total_traces": 500,
+  "coverage_fraction": 1.0
+}

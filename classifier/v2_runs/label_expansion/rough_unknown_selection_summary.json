@@ -1,0 +1,15 @@
+{
+  "rough_unknown_unlabeled_total": 353,
+  "selected": 60,
+  "trace_ids_file": "classifier/v2_runs/label_expansion/rough_unknown_unlabeled_60_trace_ids.txt",
+  "preview": "classifier/v2_runs/label_expansion/rough_unknown_unlabeled_60_preview.jsonl",
+  "first_ids": [
+    "OE_TO_maths_en_COMP-524::sample-0",
+    "OE_TO_maths_en_COMP-659::sample-3",
+    "OE_TO_maths_en_COMP-215::sample-3",
+    "OE_TO_maths_en_COMP-333::sample-3",
+    "OE_TO_maths_en_COMP-659::sample-1"
+  ],
+  "blocked_external_label_command": "python3 data_generation/qwen25_fhis/scripts/label_with_local_codex.py --traces data_generation/qwen25_fhis/outputs/generated_traces.jsonl --output classifier/v2_runs/label_expansion/rough_unknown_labels_60.jsonl --trace-ids-file classifier/v2_runs/label_expansion/rough_unknown_unlabeled_60_trace_ids.txt --include-unknown --resume --model gpt-5.5 --reasoning-effort high --max-retries 2",
+  "approval_needed": "Explicit user approval is needed before sending trace contents to external Codex/OpenAI labeling service."
+}

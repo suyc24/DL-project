@@ -1,0 +1,30 @@
+{
+  "completed_problem_batches": 9,
+  "confidence_counts": {
+    "high": 32,
+    "medium": 4
+  },
+  "duplicate_trace_ids": [],
+  "final_correct_counts": {
+    "False": 28,
+    "True": 8
+  },
+  "first_invalid_nonnull": 29,
+  "first_invalid_null": 7,
+  "labels": 36,
+  "missing_required_count": 0,
+  "missing_required_sample": [],
+  "num_duplicate_trace_ids": 0,
+  "problem_counts": {
+    "OE_TO_maths_en_COMP-130": 4,
+    "OE_TO_maths_en_COMP-2": 4,
+    "OE_TO_maths_en_COMP-210": 4,
+    "OE_TO_maths_en_COMP-288": 4,
+    "OE_TO_maths_en_COMP-333": 4,
+    "OE_TO_maths_en_COMP-465": 4,
+    "OE_TO_maths_en_COMP-517": 4,
+    "OE_TO_maths_en_COMP-544": 4,
+    "OE_TO_maths_en_COMP-57": 4
+  },
+  "unique_trace_ids": 36
+}

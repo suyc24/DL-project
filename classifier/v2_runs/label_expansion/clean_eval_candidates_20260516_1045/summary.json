@@ -1,0 +1,20 @@
+{
+  "split_problem_counts": {
+    "val_inner": 186,
+    "calibration": 93,
+    "hard_dev": 117
+  },
+  "contaminated_problem_count": 396,
+  "total_candidate_rows": 76,
+  "clean_problem_disjoint_rows": 40,
+  "candidate_counts_by_source": {
+    "rough_unknown_60_preview": 60,
+    "quality_pilot_traces": 8,
+    "quality_pilot_lowtemp_traces": 8
+  },
+  "clean_counts_by_source": {
+    "rough_unknown_60_preview": 38,
+    "quality_pilot_traces": 2
+  },
+  "clean_rough_unknown_count": 38
+}
