@@ -1,0 +1,14 @@
+# Generated and runtime artifacts
+lean/generated/
+experiments/runs/
+verification/logs/
+verification/artifacts/
+*.log
+*.jsonl
+*.json
+__pycache__/
+*.pyc
+.env
+.vscode/
+.DS_Store
+tmp/
