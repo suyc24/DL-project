@@ -1,0 +1,1 @@
+{"id": "OE_TO_maths_en_COMP-1618", "source": "Hothan/OlympiadBench", "config": "OE_TO_maths_en_COMP", "subject": "Math", "subfield": "Number Theory", "difficulty": "Competition", "language": "English", "question": "Determine all prime numbers $p$ and all positive integers $x$ and $y$ satisfying $x^{3}+y^{3}=$ $p(x y+p)$.", "reference_answer": ["$(1,8,19), (2,7,13), (4,5,7)$"]}

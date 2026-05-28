@@ -1,0 +1,25 @@
+{
+  "paths": {
+    "lean_project_dir": "/root/mathlib4"
+  },
+  "llm": {
+    "provider": "codex",
+    "model": null,
+    "timeout": 900,
+    "max_workers": 1,
+    "codex_reasoning_effort": "high",
+    "codex_sandbox": "read-only",
+    "codex_cwd": "/root/DL-project"
+  },
+  "run": {
+    "chains": 1,
+    "sample_steps": 1,
+    "seed": 42,
+    "include_final_answer": false
+  },
+  "lean": {
+    "timeout": 120,
+    "repair_rounds": 3,
+    "skip_check": false
+  }
+}
