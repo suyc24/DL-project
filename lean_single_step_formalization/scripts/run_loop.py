@@ -102,6 +102,21 @@ def cfg_get(config: dict[str, Any], dotted: str, default: Any) -> Any:
     return cur
 
 
+def parse_reasoning(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"", "auto", "default", "none", "null"}:
+        return None
+    if text in {"true", "1", "yes", "y", "on", "enabled", "enable"}:
+        return True
+    if text in {"false", "0", "no", "n", "off", "disabled", "disable"}:
+        return False
+    raise ValueError(f"invalid reasoning value: {value!r}")
+
+
 def load_prompt(name: str) -> str:
     path = PROMPTS_DIR / name
     if not path.exists():
@@ -154,6 +169,9 @@ def generate_cot(
     mock: bool,
     max_workers: int,
     llm_timeout: int,
+    cot_max_tokens: int,
+    reasoning: bool | None,
+    openai_reasoning_effort: str | None,
     codex_reasoning_effort: str,
     codex_sandbox: str,
     codex_cwd: str,
@@ -184,12 +202,13 @@ def generate_cot(
                             "除固定标记外，所有内容都用中文。"
                         ),
                         "provider": provider,
-                    "model": model,
+                        "model": model,
                         "temperature": 0.7,
-                        "max_tokens": 2048,
+                        "max_tokens": cot_max_tokens,
                         "timeout": llm_timeout,
                         "retries": 2,
-                        "reasoning": False,
+                        "reasoning": reasoning,
+                        "openai_reasoning_effort": openai_reasoning_effort,
                         "codex_reasoning_effort": codex_reasoning_effort,
                         "codex_sandbox": codex_sandbox,
                         "codex_cwd": codex_cwd,
@@ -354,10 +373,13 @@ def generate_lean_contracts(
     mock: bool,
     out_dir: Path,
     llm_timeout: int,
+    lean_max_tokens: int,
     project_dir: Path,
     lean_timeout: int,
     repair_rounds: int,
     skip_lean_check: bool,
+    reasoning: bool | None,
+    openai_reasoning_effort: str | None,
     codex_reasoning_effort: str,
     codex_sandbox: str,
     codex_cwd: str,
@@ -386,10 +408,11 @@ def generate_lean_contracts(
                 provider=provider,
                 model=model,
                 temperature=0.0,
-                max_tokens=4096,
+                max_tokens=lean_max_tokens,
                 timeout=llm_timeout,
                 retries=2,
-                reasoning=False,
+                reasoning=reasoning,
+                openai_reasoning_effort=openai_reasoning_effort,
                 codex_reasoning_effort=codex_reasoning_effort,
                 codex_sandbox=codex_sandbox,
                 codex_cwd=codex_cwd,
@@ -425,10 +448,11 @@ def generate_lean_contracts(
                         provider=provider,
                         model=model,
                         temperature=0.0,
-                        max_tokens=4096,
+                        max_tokens=lean_max_tokens,
                         timeout=llm_timeout,
                         retries=1,
-                        reasoning=False,
+                        reasoning=reasoning,
+                        openai_reasoning_effort=openai_reasoning_effort,
                         codex_reasoning_effort=codex_reasoning_effort,
                         codex_sandbox=codex_sandbox,
                         codex_cwd=codex_cwd,
@@ -641,6 +665,20 @@ def main() -> None:
     parser.add_argument("--mock", action="store_true", help="no API calls; generate deterministic toy outputs")
     parser.add_argument("--max-workers", type=int, default=None)
     parser.add_argument("--llm-timeout", type=int, default=None, help="single LLM call timeout in seconds")
+    parser.add_argument("--cot-max-tokens", type=int, default=None)
+    parser.add_argument("--lean-max-tokens", type=int, default=None)
+    parser.add_argument(
+        "--reasoning",
+        choices=["auto", "enabled", "disabled"],
+        default=None,
+        help="OpenAI-compatible thinking/reasoning switch; auto omits provider-specific parameter",
+    )
+    parser.add_argument(
+        "--openai-reasoning-effort",
+        choices=["high", "max"],
+        default=None,
+        help="OpenAI-compatible reasoning_effort, e.g. DeepSeek high/max",
+    )
     parser.add_argument("--codex-reasoning-effort", default=None)
     parser.add_argument("--codex-sandbox", default=None)
     parser.add_argument("--codex-cwd", default=None)
@@ -660,6 +698,10 @@ def main() -> None:
     llm_provider = args.llm_provider or os.environ.get("LLM_PROVIDER") or cfg_get(config, "llm.provider", "codex")
     max_workers = args.max_workers if args.max_workers is not None else int(cfg_get(config, "llm.max_workers", 4))
     llm_timeout = args.llm_timeout if args.llm_timeout is not None else int(cfg_get(config, "llm.timeout", 900))
+    cot_max_tokens = args.cot_max_tokens if args.cot_max_tokens is not None else int(cfg_get(config, "llm.cot_max_tokens", 2048))
+    lean_max_tokens = args.lean_max_tokens if args.lean_max_tokens is not None else int(cfg_get(config, "llm.lean_max_tokens", 4096))
+    reasoning = parse_reasoning(args.reasoning if args.reasoning is not None else cfg_get(config, "llm.reasoning", None))
+    openai_reasoning_effort = args.openai_reasoning_effort or cfg_get(config, "llm.openai_reasoning_effort", None)
     codex_reasoning_effort = (
         args.codex_reasoning_effort
         or os.environ.get("CODEX_REASONING_EFFORT")
@@ -702,6 +744,10 @@ def main() -> None:
         "model": "mock" if args.mock else (model or f"{args.llm_provider}:default"),
         "llm_provider": "mock" if args.mock else llm_provider,
         "llm_timeout": llm_timeout,
+        "cot_max_tokens": cot_max_tokens,
+        "lean_max_tokens": lean_max_tokens,
+        "reasoning": reasoning,
+        "openai_reasoning_effort": openai_reasoning_effort,
         "mock": args.mock,
         "codex_reasoning_effort": codex_reasoning_effort,
         "codex_sandbox": codex_sandbox,
@@ -721,6 +767,9 @@ def main() -> None:
         mock=args.mock,
         max_workers=max_workers,
         llm_timeout=llm_timeout,
+        cot_max_tokens=cot_max_tokens,
+        reasoning=reasoning,
+        openai_reasoning_effort=openai_reasoning_effort,
         codex_reasoning_effort=codex_reasoning_effort,
         codex_sandbox=codex_sandbox,
         codex_cwd=codex_cwd,
@@ -745,10 +794,13 @@ def main() -> None:
         mock=args.mock,
         out_dir=lean_dir,
         llm_timeout=llm_timeout,
+        lean_max_tokens=lean_max_tokens,
         project_dir=Path(project_dir),
         lean_timeout=lean_timeout,
         repair_rounds=repair_rounds,
         skip_lean_check=skip_lean_check,
+        reasoning=reasoning,
+        openai_reasoning_effort=openai_reasoning_effort,
         codex_reasoning_effort=codex_reasoning_effort,
         codex_sandbox=codex_sandbox,
         codex_cwd=codex_cwd,

@@ -95,6 +95,7 @@ def _call_openai(
     max_tokens: int,
     timeout: int,
     reasoning: bool | None,
+    openai_reasoning_effort: str | None,
 ) -> str:
     if OpenAI is None:
         raise RuntimeError("openai package is not installed")
@@ -110,6 +111,8 @@ def _call_openai(
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if openai_reasoning_effort:
+        kwargs["reasoning_effort"] = openai_reasoning_effort
     if reasoning is not None:
         kwargs["extra_body"] = {"thinking": {"type": "enabled" if reasoning else "disabled"}}
     response = client.chat.completions.create(**kwargs)
@@ -188,6 +191,7 @@ def call_llm(
     backoff: float = 1.0,
     timeout: int = 120,
     reasoning: bool | None = None,
+    openai_reasoning_effort: str | None = None,
     codex_reasoning_effort: str = "high",
     codex_sandbox: str = "read-only",
     codex_cwd: str | None = None,
@@ -214,12 +218,14 @@ def call_llm(
         start = time.time()
         try:
             logger.info(
-                "%sprovider=%s model=%s attempt=%d timeout=%s",
+                "%sprovider=%s model=%s attempt=%d timeout=%s reasoning=%s openai_reasoning_effort=%s",
                 label,
                 selected_provider,
                 model or "default",
                 attempt + 1,
                 timeout,
+                reasoning,
+                openai_reasoning_effort,
             )
             if selected_provider == "openai":
                 text = _call_openai(
@@ -229,6 +235,7 @@ def call_llm(
                     max_tokens=max_tokens,
                     timeout=timeout,
                     reasoning=reasoning,
+                    openai_reasoning_effort=openai_reasoning_effort,
                 )
             elif selected_provider == "codex":
                 text = _call_codex(
