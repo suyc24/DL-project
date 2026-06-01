@@ -65,6 +65,14 @@ except ImportError:
     OpenAI = None  # type: ignore
 
 
+class LLMCallError(RuntimeError):
+    """Raised when an LLM call fails after all retries."""
+
+
+class LLMEmptyContentError(LLMCallError):
+    """Raised when the provider returns no final assistant content."""
+
+
 def _messages_to_prompt(messages: list[dict[str, str]]) -> str:
     parts = []
     for msg in messages:
@@ -104,22 +112,70 @@ def _call_openai(
         raise RuntimeError("OPENAI_API_KEY is not set")
 
     selected_model = model or os.environ.get("OPENAI_MODEL") or "gpt-4o"
-    client = OpenAI(api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL"), timeout=timeout)
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
     kwargs: dict[str, Any] = {
         "model": selected_model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    is_deepseek_v4 = selected_model.startswith("deepseek-v4") or (
+        bool(base_url) and "deepseek" in base_url.lower()
+    )
+    if reasoning is True and is_deepseek_v4:
+        # DeepSeek thinking mode ignores sampling parameters; omitting them keeps
+        # the request closer to the documented protocol.
+        kwargs.pop("temperature", None)
     if openai_reasoning_effort:
         kwargs["reasoning_effort"] = openai_reasoning_effort
     if reasoning is not None:
         kwargs["extra_body"] = {"thinking": {"type": "enabled" if reasoning else "disabled"}}
-    response = client.chat.completions.create(**kwargs)
-    content = response.choices[0].message.content if response.choices else None
-    if not content or not content.strip():
-        raise RuntimeError("OpenAI-compatible API returned empty content")
-    return content
+
+    def request_once(request_kwargs: dict[str, Any]) -> tuple[str | None, str]:
+        response = client.chat.completions.create(**request_kwargs)
+        if not response.choices:
+            return None, "choices=0"
+        choice = response.choices[0]
+        message = choice.message
+        content = message.content
+        reasoning_content = getattr(message, "reasoning_content", None)
+        usage = getattr(response, "usage", None)
+        usage_text = ""
+        if usage is not None:
+            try:
+                usage_text = f" usage={usage.model_dump()}"
+            except Exception:
+                usage_text = f" usage={usage}"
+        diagnostics = (
+            f"finish_reason={getattr(choice, 'finish_reason', None)} "
+            f"content_chars={len(content or '')} "
+            f"reasoning_chars={len(reasoning_content or '')}"
+            f"{usage_text}"
+        )
+        return content, diagnostics
+
+    content, diagnostics = request_once(kwargs)
+    if content and content.strip():
+        return content
+
+    if reasoning is True and is_deepseek_v4:
+        retry_max_tokens = int(os.environ.get("DEEPSEEK_EMPTY_CONTENT_MAX_TOKENS", "65536"))
+        fallback_kwargs = dict(kwargs)
+        fallback_kwargs["max_tokens"] = max(max_tokens, retry_max_tokens)
+        fallback_kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+        logger.warning(
+            "DeepSeek returned empty final content in thinking mode (%s); retrying once with thinking enabled and max_tokens=%s",
+            diagnostics,
+            fallback_kwargs["max_tokens"],
+        )
+        content, fallback_diagnostics = request_once(fallback_kwargs)
+        if content and content.strip():
+            logger.info("DeepSeek large-token thinking retry succeeded after empty thinking response")
+            return content
+        diagnostics = f"{diagnostics}; fallback: {fallback_diagnostics}"
+
+    raise LLMEmptyContentError(f"OpenAI-compatible API returned empty content ({diagnostics})")
 
 
 def _call_codex(
@@ -256,30 +312,37 @@ def call_llm(
             if attempt < retries:
                 time.sleep(backoff * (2**attempt))
 
-    return (
-        "```lean\n"
-        "-- LLM call failed after retries\n"
-        f"-- provider: {selected_provider}\n"
-        f"-- last error: {last_error}\n"
-        "```"
+    raise LLMCallError(
+        f"LLM call failed after {retries + 1} attempt(s); "
+        f"provider={selected_provider}; model={model or 'default'}; last_error={last_error}"
     )
 
 
 def call_llm_batch(tasks: list[dict[str, Any]], max_workers: int = 4) -> list[str]:
     """Run multiple LLM calls concurrently and preserve task order."""
     results: list[str | None] = [None] * len(tasks)
+    errors: list[tuple[int, Exception]] = []
 
     def worker(idx: int, kwargs: dict[str, Any]) -> None:
         try:
             results[idx] = call_llm(**kwargs)
         except Exception as exc:
-            results[idx] = f"```lean\n-- Batch worker failed: {exc}\n```"
+            errors.append((idx, exc))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(worker, i, dict(task)) for i, task in enumerate(tasks)]
         concurrent.futures.wait(futures)
 
-    return [result or "```lean\n-- Empty batch result\n```" for result in results]
+    if errors:
+        detail = "; ".join(f"task {idx}: {exc}" for idx, exc in errors[:5])
+        if len(errors) > 5:
+            detail += f"; ... and {len(errors) - 5} more"
+        raise LLMCallError(f"{len(errors)} batch LLM call(s) failed: {detail}")
+
+    missing = [idx for idx, result in enumerate(results) if result is None]
+    if missing:
+        raise LLMCallError(f"missing LLM batch result(s): {missing}")
+    return [result for result in results if result is not None]
 
 
-__all__ = ["call_llm", "call_llm_batch"]
+__all__ = ["LLMCallError", "LLMEmptyContentError", "call_llm", "call_llm_batch"]

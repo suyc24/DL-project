@@ -6,8 +6,9 @@
     "provider": "codex",
     "model": null,
     "timeout": 900,
-    "cot_max_tokens": 2048,
-    "lean_max_tokens": 4096,
+    "cot_max_tokens": 65536,
+    "wrap_max_tokens": 65536,
+    "lean_max_tokens": 65536,
     "max_workers": 1,
     "reasoning": "auto",
     "openai_reasoning_effort": null,
@@ -19,7 +20,10 @@
     "chains": 1,
     "sample_steps": 1,
     "seed": 42,
-    "include_final_answer": false
+    "include_final_answer": false,
+    "wrap_repair_rounds": 2,
+    "wrap_context_before": 5,
+    "wrap_context_after": 2
   },
   "lean": {
     "timeout": 120,

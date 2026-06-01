@@ -7,8 +7,9 @@ The loop is intentionally small:
 2. ask an LLM for structured CoT traces;
 3. parse steps;
 4. randomly select target steps;
-5. ask an LLM to formalize each target step as a local Lean transition contract;
-6. optionally run `lake env lean` in a Mathlib project.
+5. ask an LLM to wrap each target step as a local premise -> conclusion claim;
+6. ask an LLM to formalize each wrapped claim as a Lean transition contract;
+7. optionally run `lake env lean` in a Mathlib project.
 
 The script can run in `--mock` mode without API keys or Lean. This is useful for
 checking file layout and downstream parsing before spending LLM calls.
@@ -49,6 +50,7 @@ COLON_STEP_RE = re.compile(
 )
 COLON_FINAL_RE = re.compile(r"Final\s*Answer\s*[:\-]?\s*(.*)", re.I | re.S)
 LEAN_BLOCK_RE = re.compile(r"```\s*(?:lean4?|lean)?\s*\n(.*?)```", re.I | re.S)
+JSON_BLOCK_RE = re.compile(r"```\s*(?:json)?\s*\n(.*?)```", re.I | re.S)
 BANNED_LEAN_RE = re.compile(r"\b(sorry|admit)\b", re.I)
 AXIOM_FALSE_RE = re.compile(r"\baxiom\s+\w+\s*:\s*False\b", re.I)
 AXIOM_RE = re.compile(r"^\s*axiom\s+([A-Za-z_][A-Za-z0-9_']*)\b", re.M)
@@ -276,6 +278,8 @@ def select_steps(
     k: int,
     seed: int,
     include_final_answer: bool,
+    context_before: int,
+    context_after: int,
 ) -> list[dict[str, Any]]:
     rng = random.Random(seed)
     selected: list[dict[str, Any]] = []
@@ -285,10 +289,15 @@ def select_steps(
             continue
         chosen = rng.sample(steps, min(k, len(steps)))
         step_by_index = {step["step_index"]: step for step in steps}
+        ordered_indices = sorted(step_by_index)
         for step in sorted(chosen, key=lambda s: s["step_index"]):
+            selected_pos = ordered_indices.index(step["step_index"])
+            context_indices = ordered_indices[
+                max(0, selected_pos - context_before) : selected_pos + context_after + 1
+            ]
             previous_steps = [
                 step_by_index[i]["text"]
-                for i in sorted(step_by_index)
+                for i in ordered_indices
                 if i < step["step_index"]
             ]
             row = {
@@ -298,6 +307,14 @@ def select_steps(
                 "step_id": step["step_index"],
                 "target_step": step["text"],
                 "previous_steps": previous_steps,
+                "context_steps": [
+                    {
+                        "step_id": i,
+                        "text": step_by_index[i]["text"],
+                        "is_selected": i == step["step_index"],
+                    }
+                    for i in context_indices
+                ],
                 "final_answer": chain.get("final_answer") if include_final_answer else None,
             }
             selected.append(row)
@@ -314,6 +331,26 @@ def extract_lean_code(text: str) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def extract_json_object(text: str) -> dict[str, Any]:
+    block_match = JSON_BLOCK_RE.search(text)
+    candidate = block_match.group(1).strip() if block_match else text.strip()
+    try:
+        parsed = json.loads(candidate)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("no JSON object found")
+    parsed = json.loads(candidate[start : end + 1])
+    if not isinstance(parsed, dict):
+        raise ValueError("JSON root is not an object")
+    return parsed
+
+
 def safe_lean_name(item: dict[str, Any]) -> str:
     raw = f"step_contract_{item['id']}_c{item['chain_id']}_s{item['step_id']}"
     name = re.sub(r"[^A-Za-z0-9_]", "_", raw)
@@ -322,7 +359,235 @@ def safe_lean_name(item: dict[str, Any]) -> str:
     return name[:180]
 
 
+def safe_record_name(item: dict[str, Any]) -> str:
+    return safe_lean_name(item).removeprefix("step_contract_")
+
+
+def build_wrap_prompt(item: dict[str, Any]) -> str:
+    context = item.get("context_steps") or [
+        {"step_id": idx + 1, "text": text, "is_selected": False}
+        for idx, text in enumerate(item.get("previous_steps") or [])
+    ]
+    if not any(row.get("is_selected") for row in context):
+        context.append(
+            {
+                "step_id": item["step_id"],
+                "text": item["target_step"],
+                "is_selected": True,
+            }
+        )
+    context_text = "\n".join(
+        f"{row['step_id']}. {'[选中] ' if row.get('is_selected') else ''}{row['text']}"
+        for row in context
+    )
+    final = item.get("final_answer") or "(unknown)"
+    return (
+        f"题目：\n{item['question']}\n\n"
+        f"候选 CoT 上下文：\n{context_text}\n\n"
+        f"选中的 CoT 步骤序号：{item['step_id']}\n"
+        f"选中的 CoT 步骤原文：{item['target_step']}\n\n"
+        f"最终答案：\n{final}\n"
+    )
+
+
+def mock_wrapped_claim(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "low_value": False,
+        "low_value_reason": "",
+        "used_cot": [
+            {
+                "step_id": item["step_id"],
+                "is_selected": True,
+                "text": item["target_step"],
+                "role": "conclusion",
+            }
+        ],
+        "wrapped_claim": {
+            "premises": [
+                {
+                    "text": "题目与前序步骤中的相关条件成立。",
+                    "source": "problem",
+                }
+            ],
+            "conclusion": {
+                "text": item["target_step"],
+                "source": f"cot_step_{item['step_id']}",
+            },
+            "proof_description": "这是 mock 包装：把选中步骤作为局部结论，相关条件作为局部前提。",
+        },
+    }
+
+
+def validate_wrapped_record(record: dict[str, Any], item: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(record.get("low_value"), bool):
+        errors.append("low_value must be a boolean")
+    used_cot = record.get("used_cot")
+    if not isinstance(used_cot, list) or not used_cot:
+        errors.append("used_cot must be a non-empty list")
+    else:
+        selected = [row for row in used_cot if row.get("is_selected") is True]
+        if len(selected) != 1:
+            errors.append("used_cot must contain exactly one selected step")
+        elif int(selected[0].get("step_id", -1)) != int(item["step_id"]):
+            errors.append("selected used_cot step_id does not match target step")
+        elif str(selected[0].get("text", "")).strip() != str(item["target_step"]).strip():
+            errors.append("selected used_cot text must match target step exactly")
+
+    wrapped = record.get("wrapped_claim")
+    if not isinstance(wrapped, dict):
+        errors.append("wrapped_claim must be an object")
+        return errors
+    premises = wrapped.get("premises")
+    if not isinstance(premises, list) or not premises:
+        errors.append("wrapped_claim.premises must be a non-empty list")
+    else:
+        for idx, premise in enumerate(premises):
+            if not isinstance(premise, dict):
+                errors.append(f"premise {idx} must be an object")
+                continue
+            if not str(premise.get("text", "")).strip():
+                errors.append(f"premise {idx} missing text")
+            source = str(premise.get("source", "")).strip()
+            if not (
+                source == "problem"
+                or source == "standard_math"
+                or re.fullmatch(r"cot_step_\d+", source)
+            ):
+                errors.append(f"premise {idx} has invalid source")
+    conclusion = wrapped.get("conclusion")
+    if not isinstance(conclusion, dict) or not str(conclusion.get("text", "")).strip():
+        errors.append("wrapped_claim.conclusion must contain text")
+    else:
+        source = str(conclusion.get("source", "")).strip()
+        if not (
+            source == "problem"
+            or source == "standard_math"
+            or re.fullmatch(r"cot_step_\d+", source)
+        ):
+            errors.append("wrapped_claim.conclusion has invalid source")
+    if not str(wrapped.get("proof_description", "")).strip():
+        errors.append("wrapped_claim.proof_description is required")
+    return errors
+
+
+def wrap_repair_prompt(raw: str, errors: list[str], item: dict[str, Any]) -> str:
+    return (
+        "上一次输出不是合格的 JSON 包装结果。请只返回修复后的合法 JSON。\n\n"
+        f"选中步骤序号：{item['step_id']}\n"
+        f"选中步骤原文：{item['target_step']}\n\n"
+        "校验错误：\n"
+        + "\n".join(f"- {error}" for error in errors)
+        + "\n\n上一次输出：\n"
+        f"{raw[-6000:]}"
+    )
+
+
+def generate_wrapped_claims(
+    selected_steps: list[dict[str, Any]],
+    *,
+    provider: str,
+    model: str | None,
+    mock: bool,
+    out_dir: Path,
+    llm_timeout: int,
+    wrap_max_tokens: int,
+    wrap_repair_rounds: int,
+    reasoning: bool | None,
+    openai_reasoning_effort: str | None,
+    codex_reasoning_effort: str,
+    codex_sandbox: str,
+    codex_cwd: str,
+) -> list[dict[str, Any]]:
+    system_prompt = load_prompt("wrap_step_claim.md")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    records: list[dict[str, Any]] = []
+
+    for item in selected_steps:
+        if mock:
+            raw = json.dumps(mock_wrapped_claim(item), ensure_ascii=False, indent=2)
+            parsed = mock_wrapped_claim(item)
+            validation_errors: list[str] = []
+        else:
+            raw = call_llm(
+                system_prompt=system_prompt,
+                user_prompt=build_wrap_prompt(item),
+                provider=provider,
+                model=model,
+                temperature=0.0,
+                max_tokens=wrap_max_tokens,
+                timeout=llm_timeout,
+                retries=2,
+                reasoning=reasoning,
+                openai_reasoning_effort=openai_reasoning_effort,
+                codex_reasoning_effort=codex_reasoning_effort,
+                codex_sandbox=codex_sandbox,
+                codex_cwd=codex_cwd,
+                call_label=f"{item['id']}-c{item['chain_id']}-s{item['step_id']}-wrap",
+            )
+            parsed: dict[str, Any] = {}
+            validation_errors = []
+            for round_idx in range(wrap_repair_rounds + 1):
+                try:
+                    parsed = extract_json_object(raw)
+                    validation_errors = validate_wrapped_record(parsed, item)
+                except Exception as exc:
+                    validation_errors = [str(exc)]
+                if not validation_errors:
+                    break
+                if round_idx >= wrap_repair_rounds:
+                    break
+                raw = call_llm(
+                    system_prompt=system_prompt,
+                    user_prompt=wrap_repair_prompt(raw, validation_errors, item),
+                    provider=provider,
+                    model=model,
+                    temperature=0.0,
+                    max_tokens=wrap_max_tokens,
+                    timeout=llm_timeout,
+                    retries=1,
+                    reasoning=reasoning,
+                    openai_reasoning_effort=openai_reasoning_effort,
+                    codex_reasoning_effort=codex_reasoning_effort,
+                    codex_sandbox=codex_sandbox,
+                    codex_cwd=codex_cwd,
+                    call_label=f"{item['id']}-c{item['chain_id']}-s{item['step_id']}-wrap-repair-{round_idx + 1}",
+                )
+
+        file_stem = safe_record_name(item)
+        raw_path = out_dir / f"{file_stem}.response.txt"
+        validation_path = out_dir / f"{file_stem}.validation.json"
+        raw_path.write_text(raw, encoding="utf-8")
+        write_json({"ok": not validation_errors, "errors": validation_errors}, validation_path)
+        if validation_errors:
+            fallback = mock_wrapped_claim(item)
+            fallback["low_value"] = True
+            fallback["low_value_reason"] = "wrapper 输出未通过 JSON/结构校验，使用保底 wrapped_claim"
+            parsed = fallback
+        records.append(
+            {
+                **item,
+                "low_value": bool(parsed.get("low_value")) if isinstance(parsed, dict) else True,
+                "low_value_reason": parsed.get("low_value_reason", "") if isinstance(parsed, dict) else "",
+                "used_cot": parsed.get("used_cot", []) if isinstance(parsed, dict) else [],
+                "wrapped_claim": parsed.get("wrapped_claim", {}) if isinstance(parsed, dict) else {},
+                "wrap_response_file": str(raw_path),
+                "wrap_validation_file": str(validation_path),
+                "wrap_valid": not validation_errors,
+                "wrap_errors": validation_errors,
+            }
+        )
+    return records
+
+
 def build_lean_prompt(item: dict[str, Any], theorem_name: str) -> str:
+    if item.get("wrapped_claim"):
+        template = load_prompt("lean_wrapped_claim.md")
+        return template.format(
+            THEOREM_NAME=theorem_name,
+            WRAPPED_CLAIM_JSON=json.dumps(item["wrapped_claim"], ensure_ascii=False, indent=2),
+        )
+
     previous = "\n".join(
         f"{idx + 1}. {text}" for idx, text in enumerate(item.get("previous_steps") or [])
     )
@@ -386,7 +651,8 @@ def generate_lean_contracts(
 ) -> list[dict[str, Any]]:
     system_prompt = (
         "你是 Lean 4 形式化工程师。只返回一个 Lean 代码块。"
-        "请把目标步骤形式化为局部 transition contract。"
+        "请把 wrapped_claim 形式化为局部 transition contract。"
+        "Lean theorem 必须表达前提推出结论。"
         "不允许使用 sorry、admit。优先不用 axiom；如果需要，请优先写成 theorem 的局部 h_missing_* 假设。"
         "只有在局部假设难以表达时，才允许使用具体命名的 obligation_* axiom。"
         "如果 Lean 代码里需要注释，注释请用中文。"
@@ -564,13 +830,20 @@ def check_lean_code(
     has_false_axiom = bool(AXIOM_FALSE_RE.search(code))
     declared_axioms = AXIOM_RE.findall(code)
     local_missing = sorted(set(LOCAL_MISSING_RE.findall(code)))
+    missing_theorem = bool(theorem_name) and not re.search(
+        rf"\btheorem\s+{re.escape(theorem_name or '')}\b", code
+    )
 
-    if has_banned or has_false_axiom:
+    if has_banned or has_false_axiom or missing_theorem:
+        if missing_theorem:
+            reason = f"Lean code does not declare theorem {theorem_name}"
+        else:
+            reason = "Lean code contains sorry/admit or a False axiom"
         return {
             "ok": False,
             "returncode": None,
             "stdout": "",
-            "stderr": "Lean code contains sorry/admit or a False axiom",
+            "stderr": reason,
             "elapsed": 0.0,
             "declared_axioms": declared_axioms,
             "local_missing_hypotheses": local_missing,
@@ -603,6 +876,14 @@ def check_lean_code(
         result["print_axioms_ok"] = axiom_probe["ok"]
         result["print_axioms_raw"] = raw_report
         result["kernel_axioms"] = parse_print_axioms_output(raw_report)
+        if not axiom_probe["ok"]:
+            result["ok"] = False
+            result["dependency_mode"] = "invalid"
+            result["stderr"] = (
+                (result.get("stderr") or "")
+                + "\n#print axioms failed; theorem may be missing or inaccessible:\n"
+                + raw_report
+            ).strip()
     return result
 
 
@@ -666,7 +947,11 @@ def main() -> None:
     parser.add_argument("--max-workers", type=int, default=None)
     parser.add_argument("--llm-timeout", type=int, default=None, help="single LLM call timeout in seconds")
     parser.add_argument("--cot-max-tokens", type=int, default=None)
+    parser.add_argument("--wrap-max-tokens", type=int, default=None)
     parser.add_argument("--lean-max-tokens", type=int, default=None)
+    parser.add_argument("--wrap-repair-rounds", type=int, default=None)
+    parser.add_argument("--wrap-context-before", type=int, default=None)
+    parser.add_argument("--wrap-context-after", type=int, default=None)
     parser.add_argument(
         "--reasoning",
         choices=["auto", "enabled", "disabled"],
@@ -699,6 +984,7 @@ def main() -> None:
     max_workers = args.max_workers if args.max_workers is not None else int(cfg_get(config, "llm.max_workers", 4))
     llm_timeout = args.llm_timeout if args.llm_timeout is not None else int(cfg_get(config, "llm.timeout", 900))
     cot_max_tokens = args.cot_max_tokens if args.cot_max_tokens is not None else int(cfg_get(config, "llm.cot_max_tokens", 2048))
+    wrap_max_tokens = args.wrap_max_tokens if args.wrap_max_tokens is not None else int(cfg_get(config, "llm.wrap_max_tokens", 4096))
     lean_max_tokens = args.lean_max_tokens if args.lean_max_tokens is not None else int(cfg_get(config, "llm.lean_max_tokens", 4096))
     reasoning = parse_reasoning(args.reasoning if args.reasoning is not None else cfg_get(config, "llm.reasoning", None))
     openai_reasoning_effort = args.openai_reasoning_effort or cfg_get(config, "llm.openai_reasoning_effort", None)
@@ -712,6 +998,21 @@ def main() -> None:
     project_dir = args.project_dir or cfg_get(config, "paths.lean_project_dir", default_lean_project_dir())
     lean_timeout = args.lean_timeout if args.lean_timeout is not None else int(cfg_get(config, "lean.timeout", 120))
     repair_rounds = args.repair_rounds if args.repair_rounds is not None else int(cfg_get(config, "lean.repair_rounds", 3))
+    wrap_repair_rounds = (
+        args.wrap_repair_rounds
+        if args.wrap_repair_rounds is not None
+        else int(cfg_get(config, "run.wrap_repair_rounds", 2))
+    )
+    wrap_context_before = (
+        args.wrap_context_before
+        if args.wrap_context_before is not None
+        else int(cfg_get(config, "run.wrap_context_before", 5))
+    )
+    wrap_context_after = (
+        args.wrap_context_after
+        if args.wrap_context_after is not None
+        else int(cfg_get(config, "run.wrap_context_after", 2))
+    )
     skip_lean_check = args.skip_lean_check or bool(cfg_get(config, "lean.skip_check", False))
     include_final_answer = args.include_final_answer or bool(cfg_get(config, "run.include_final_answer", False))
 
@@ -719,6 +1020,7 @@ def main() -> None:
     input_dir = run_dir / "input"
     cot_dir = run_dir / "cot"
     selection_dir = run_dir / "selection"
+    wrapped_dir = run_dir / "wrapped_claims"
     lean_dir = run_dir / "lean"
     verification_dir = run_dir / "verification"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -745,6 +1047,7 @@ def main() -> None:
         "llm_provider": "mock" if args.mock else llm_provider,
         "llm_timeout": llm_timeout,
         "cot_max_tokens": cot_max_tokens,
+        "wrap_max_tokens": wrap_max_tokens,
         "lean_max_tokens": lean_max_tokens,
         "reasoning": reasoning,
         "openai_reasoning_effort": openai_reasoning_effort,
@@ -753,6 +1056,9 @@ def main() -> None:
         "codex_sandbox": codex_sandbox,
         "codex_cwd": codex_cwd,
         "project_dir": project_dir,
+        "wrap_repair_rounds": wrap_repair_rounds,
+        "wrap_context_before": wrap_context_before,
+        "wrap_context_after": wrap_context_after,
         "repair_rounds": repair_rounds,
         "skip_lean_check": skip_lean_check,
         "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -784,11 +1090,30 @@ def main() -> None:
         k=sample_steps,
         seed=seed,
         include_final_answer=include_final_answer,
+        context_before=wrap_context_before,
+        context_after=wrap_context_after,
     )
     write_jsonl(selected, selection_dir / "steps_selected.jsonl")
 
-    generated = generate_lean_contracts(
+    wrapped = generate_wrapped_claims(
         selected,
+        provider=llm_provider,
+        model=model,
+        mock=args.mock,
+        out_dir=wrapped_dir,
+        llm_timeout=llm_timeout,
+        wrap_max_tokens=wrap_max_tokens,
+        wrap_repair_rounds=wrap_repair_rounds,
+        reasoning=reasoning,
+        openai_reasoning_effort=openai_reasoning_effort,
+        codex_reasoning_effort=codex_reasoning_effort,
+        codex_sandbox=codex_sandbox,
+        codex_cwd=codex_cwd,
+    )
+    write_jsonl(wrapped, wrapped_dir / "wrapped_claims.jsonl")
+
+    generated = generate_lean_contracts(
+        wrapped,
         provider=llm_provider,
         model=model,
         mock=args.mock,
@@ -820,6 +1145,10 @@ def main() -> None:
         "chains": len(parsed),
         "parsed_steps": sum(len(chain.get("steps", [])) for chain in parsed),
         "selected_steps": len(selected),
+        "wrapped_claims": len(wrapped),
+        "wrap_valid": sum(1 for row in wrapped if row.get("wrap_valid") is True),
+        "wrap_invalid": sum(1 for row in wrapped if row.get("wrap_valid") is not True),
+        "low_value_steps": sum(1 for row in wrapped if row.get("low_value") is True),
         "lean_files": len(generated),
         "verified_ok": sum(1 for row in verification if row.get("ok") is True),
         "verified_failed": sum(1 for row in verification if row.get("ok") is False),
