@@ -9,12 +9,15 @@ Supported providers:
   config, not a direct API key from this script.
 
 Both providers expose the same `call_llm` and `call_llm_batch` functions.
+For local Codex, pass `codex_thread_id` to resume an existing session UUID, or
+`codex_thread_file` to persist the first session UUID and resume it later.
 """
 from __future__ import annotations
 
 import concurrent.futures
 import logging
 import os
+import re
 import signal
 import subprocess
 import tempfile
@@ -178,6 +181,35 @@ def _call_openai(
     raise LLMEmptyContentError(f"OpenAI-compatible API returned empty content ({diagnostics})")
 
 
+CODEX_SESSION_RE = re.compile(r"session id:\s*([0-9a-fA-F-]{20,})")
+
+
+def _read_codex_thread_file(path: str | None) -> str | None:
+    if not path:
+        return None
+    thread_path = Path(path)
+    if not thread_path.exists():
+        return None
+    value = thread_path.read_text(encoding="utf-8").strip()
+    return value or None
+
+
+def _write_codex_thread_file(path: str | None, session_id: str | None) -> None:
+    if not path or not session_id:
+        return
+    thread_path = Path(path)
+    thread_path.parent.mkdir(parents=True, exist_ok=True)
+    thread_path.write_text(session_id + "\n", encoding="utf-8")
+
+
+def _parse_codex_session_id(*texts: str) -> str | None:
+    for text in texts:
+        match = CODEX_SESSION_RE.search(text or "")
+        if match:
+            return match.group(1)
+    return None
+
+
 def _call_codex(
     messages: list[dict[str, str]],
     *,
@@ -186,28 +218,52 @@ def _call_codex(
     reasoning_effort: str,
     sandbox: str,
     cwd: str,
+    thread_id: str | None,
+    thread_file: str | None,
 ) -> str:
     selected_model = model or os.environ.get("CODEX_MODEL") or os.environ.get("OPENAI_MODEL")
+    selected_thread_id = thread_id or _read_codex_thread_file(thread_file)
     prompt = _messages_to_prompt(messages).replace("\x00", "")
     env = os.environ.copy()
     with tempfile.NamedTemporaryFile("w+", encoding="utf-8", suffix=".txt") as out:
-        cmd = [
-            "codex",
-            "exec",
-            "--cd",
-            cwd,
-            "--sandbox",
-            sandbox,
-            "-c",
-            f'model_reasoning_effort="{reasoning_effort}"',
-            "-c",
-            'approval_policy="never"',
-            "--output-last-message",
-            out.name,
-            "-",
-        ]
-        if selected_model:
-            cmd[cmd.index("-c"):cmd.index("-c")] = ["-m", selected_model]
+        if selected_thread_id:
+            cmd = [
+                "codex",
+                "-C",
+                cwd,
+                "-s",
+                sandbox,
+                "exec",
+                "resume",
+                "-c",
+                f'model_reasoning_effort="{reasoning_effort}"',
+                "-c",
+                'approval_policy="never"',
+                "--output-last-message",
+                out.name,
+                selected_thread_id,
+                "-",
+            ]
+            if selected_model:
+                cmd[cmd.index("-c"):cmd.index("-c")] = ["-m", selected_model]
+        else:
+            cmd = [
+                "codex",
+                "exec",
+                "--cd",
+                cwd,
+                "--sandbox",
+                sandbox,
+                "-c",
+                f'model_reasoning_effort="{reasoning_effort}"',
+                "-c",
+                'approval_policy="never"',
+                "--output-last-message",
+                out.name,
+                "-",
+            ]
+            if selected_model:
+                cmd[cmd.index("-c"):cmd.index("-c")] = ["-m", selected_model]
         proc = subprocess.Popen(
             cmd,
             cwd=cwd,
@@ -228,6 +284,8 @@ def _call_codex(
             raise RuntimeError(stderr.strip() or stdout.strip() or "codex exec failed")
         out.seek(0)
         content = out.read()
+    session_id = _parse_codex_session_id(stdout, stderr)
+    _write_codex_thread_file(thread_file, session_id)
     if not content.strip():
         raise RuntimeError("codex exec returned empty last message")
     return content
@@ -251,6 +309,8 @@ def call_llm(
     codex_reasoning_effort: str = "high",
     codex_sandbox: str = "read-only",
     codex_cwd: str | None = None,
+    codex_thread_id: str | None = None,
+    codex_thread_file: str | None = None,
     call_label: str = "",
 ) -> str:
     """Call an LLM provider and return plain text."""
@@ -301,6 +361,8 @@ def call_llm(
                     reasoning_effort=codex_reasoning_effort,
                     sandbox=codex_sandbox,
                     cwd=codex_cwd or str(Path.cwd()),
+                    thread_id=codex_thread_id,
+                    thread_file=codex_thread_file,
                 )
             else:
                 raise ValueError(f"Unsupported LLM provider: {selected_provider}")

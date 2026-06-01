@@ -55,6 +55,7 @@ BANNED_LEAN_RE = re.compile(r"\b(sorry|admit)\b", re.I)
 AXIOM_FALSE_RE = re.compile(r"\baxiom\s+\w+\s*:\s*False\b", re.I)
 AXIOM_RE = re.compile(r"^\s*axiom\s+([A-Za-z_][A-Za-z0-9_']*)\b", re.M)
 LOCAL_MISSING_RE = re.compile(r"\bh_missing_[A-Za-z0-9_']*\b")
+WRAP_DIAGNOSTIC_RE = re.compile(r"(不成立|错误|有误|正确(的)?(版本|分解|结论)|反例|一般不|不能作为)")
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -321,6 +322,308 @@ def select_steps(
     return selected
 
 
+def build_selected_step_row(
+    chain: dict[str, Any],
+    step: dict[str, Any],
+    *,
+    include_final_answer: bool,
+    context_before: int,
+    context_after: int,
+    selection_score: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    steps = chain.get("steps", [])
+    step_by_index = {row["step_index"]: row for row in steps}
+    ordered_indices = sorted(step_by_index)
+    selected_pos = ordered_indices.index(step["step_index"])
+    context_indices = ordered_indices[
+        max(0, selected_pos - context_before) : selected_pos + context_after + 1
+    ]
+    previous_steps = [
+        step_by_index[i]["text"]
+        for i in ordered_indices
+        if i < step["step_index"]
+    ]
+    row = {
+        "id": chain["id"],
+        "question": chain["question"],
+        "chain_id": chain["chain_index"],
+        "step_id": step["step_index"],
+        "target_step": step["text"],
+        "previous_steps": previous_steps,
+        "context_steps": [
+            {
+                "step_id": i,
+                "text": step_by_index[i]["text"],
+                "is_selected": i == step["step_index"],
+            }
+            for i in context_indices
+        ],
+        "final_answer": chain.get("final_answer") if include_final_answer else None,
+    }
+    if selection_score:
+        row["selection_score"] = selection_score
+    return row
+
+
+def heuristic_step_score(step: dict[str, Any]) -> dict[str, Any]:
+    text = str(step.get("text", ""))
+    has_math_symbol = bool(re.search(r"[=<>∣|≤≥≡∑∏√^_{}\\]", text))
+    has_claim_word = any(
+        word in text
+        for word in [
+            "得到",
+            "推出",
+            "因此",
+            "所以",
+            "必须",
+            "等于",
+            "整除",
+            "同余",
+            "不等式",
+            "最大",
+            "最小",
+            "构造",
+            "归纳",
+        ]
+    )
+    low_value = any(
+        phrase in text
+        for phrase in ["重述", "设", "记", "题目要求", "题目目标", "我们需要", "尝试", "考虑", "先"]
+    ) and not (has_math_symbol and has_claim_word)
+    verification_value = 4 if has_math_symbol and has_claim_word else 2
+    risk = 4 if any(word in text for word in ["显然", "必然", "所有", "任意", "存在", "唯一"]) else 2
+    feasibility = 4 if has_math_symbol else 2
+    if low_value:
+        verification_value = min(verification_value, 2)
+        risk = min(risk, 2)
+    return {
+        "step_id": int(step["step_index"]),
+        "is_mathematical_claim": bool(has_math_symbol or has_claim_word),
+        "low_value": bool(low_value),
+        "verification_value": verification_value,
+        "risk": risk,
+        "lean_feasibility": feasibility,
+        "reason": "启发式评分：根据数学符号、推理关键词和低价值短语估计。",
+    }
+
+
+def normalize_step_score(raw: dict[str, Any], step: dict[str, Any]) -> dict[str, Any]:
+    fallback = heuristic_step_score(step)
+    score: dict[str, Any] = {
+        "step_id": int(step["step_index"]),
+        "is_mathematical_claim": bool(raw.get("is_mathematical_claim", fallback["is_mathematical_claim"])),
+        "low_value": bool(raw.get("low_value", fallback["low_value"])),
+        "reason": str(raw.get("reason") or fallback["reason"]).strip(),
+    }
+    for key in ["verification_value", "risk", "lean_feasibility"]:
+        try:
+            value = int(raw.get(key, fallback[key]))
+        except Exception:
+            value = int(fallback[key])
+        score[key] = max(1, min(5, value))
+    score["combined_score"] = (
+        score["verification_value"] * score["risk"] + score["lean_feasibility"]
+    )
+    if score["low_value"] or not score["is_mathematical_claim"]:
+        score["combined_score"] -= 20
+    return score
+
+
+def build_step_score_prompt(chain: dict[str, Any]) -> str:
+    steps_text = "\n".join(
+        f"{step['step_index']}. {step['text']}"
+        for step in chain.get("steps", [])
+    )
+    final = chain.get("final_answer") or "(unknown)"
+    return (
+        f"题目：\n{chain['question']}\n\n"
+        f"CoT 步骤：\n{steps_text}\n\n"
+        f"最终答案：\n{final}\n"
+    )
+
+
+def mock_step_scores(chain: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "steps": [
+            heuristic_step_score(step)
+            for step in chain.get("steps", [])
+        ]
+    }
+
+
+def validate_step_scores(record: dict[str, Any], chain: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    steps = chain.get("steps", [])
+    expected = {int(step["step_index"]) for step in steps}
+    raw_scores = record.get("steps")
+    if not isinstance(raw_scores, list):
+        return ["steps must be a list"]
+    seen: set[int] = set()
+    for idx, row in enumerate(raw_scores):
+        if not isinstance(row, dict):
+            errors.append(f"score row {idx} must be an object")
+            continue
+        try:
+            step_id = int(row.get("step_id"))
+        except Exception:
+            errors.append(f"score row {idx} missing integer step_id")
+            continue
+        if step_id not in expected:
+            errors.append(f"score row {idx} has unknown step_id {step_id}")
+        seen.add(step_id)
+        for key in ["verification_value", "risk", "lean_feasibility"]:
+            try:
+                value = int(row.get(key))
+            except Exception:
+                errors.append(f"step {step_id} missing integer {key}")
+                continue
+            if value < 1 or value > 5:
+                errors.append(f"step {step_id} {key} must be between 1 and 5")
+        if not isinstance(row.get("is_mathematical_claim"), bool):
+            errors.append(f"step {step_id} is_mathematical_claim must be boolean")
+        if not isinstance(row.get("low_value"), bool):
+            errors.append(f"step {step_id} low_value must be boolean")
+    missing = sorted(expected - seen)
+    if missing:
+        errors.append(f"missing scores for step_id(s): {missing}")
+    return errors
+
+
+def score_cot_steps(
+    parsed_chains: list[dict[str, Any]],
+    *,
+    provider: str,
+    model: str | None,
+    mock: bool,
+    out_dir: Path,
+    llm_timeout: int,
+    score_max_tokens: int,
+    max_workers: int,
+    reasoning: bool | None,
+    openai_reasoning_effort: str | None,
+    codex_reasoning_effort: str,
+    codex_sandbox: str,
+    codex_cwd: str,
+) -> list[dict[str, Any]]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    system_prompt = load_prompt("score_cot_steps.md")
+    score_records: list[dict[str, Any]] = []
+
+    chains = [chain for chain in parsed_chains if chain.get("steps")]
+    if mock:
+        raw_texts = [
+            json.dumps(mock_step_scores(chain), ensure_ascii=False, indent=2)
+            for chain in chains
+        ]
+    else:
+        tasks = [
+            {
+                "system_prompt": system_prompt,
+                "user_prompt": build_step_score_prompt(chain),
+                "provider": provider,
+                "model": model,
+                "temperature": 0.0,
+                "max_tokens": score_max_tokens,
+                "timeout": llm_timeout,
+                "retries": 1,
+                "reasoning": reasoning,
+                "openai_reasoning_effort": openai_reasoning_effort,
+                "codex_reasoning_effort": codex_reasoning_effort,
+                "codex_sandbox": codex_sandbox,
+                "codex_cwd": codex_cwd,
+                "call_label": f"{chain['id']}-c{chain['chain_index']}-score",
+            }
+            for chain in chains
+        ]
+        raw_texts = call_llm_batch(tasks, max_workers=max_workers)
+
+    for chain, raw in zip(chains, raw_texts):
+        file_stem = safe_record_name(
+            {"id": chain["id"], "chain_id": chain["chain_index"], "step_id": "scores"}
+        )
+        raw_path = out_dir / f"{file_stem}.response.txt"
+        validation_path = out_dir / f"{file_stem}.validation.json"
+        raw_path.write_text(raw, encoding="utf-8")
+        try:
+            parsed = extract_json_object(raw)
+            validation_errors = validate_step_scores(parsed, chain)
+        except Exception as exc:
+            parsed = mock_step_scores(chain)
+            validation_errors = [str(exc)]
+        if validation_errors:
+            parsed = mock_step_scores(chain)
+        step_by_id = {int(step["step_index"]): step for step in chain.get("steps", [])}
+        normalized = [
+            normalize_step_score(row, step_by_id[int(row.get("step_id", -1))])
+            for row in parsed.get("steps", [])
+            if int(row.get("step_id", -1)) in step_by_id
+        ]
+        normalized_by_id = {row["step_id"]: row for row in normalized}
+        for step in chain.get("steps", []):
+            step_id = int(step["step_index"])
+            if step_id not in normalized_by_id:
+                normalized_by_id[step_id] = normalize_step_score({}, step)
+        score_rows = [normalized_by_id[i] for i in sorted(normalized_by_id)]
+        write_json({"ok": not validation_errors, "errors": validation_errors}, validation_path)
+        score_records.append(
+            {
+                "id": chain["id"],
+                "question": chain["question"],
+                "chain_id": chain["chain_index"],
+                "model": chain.get("model"),
+                "final_answer": chain.get("final_answer"),
+                "scores": score_rows,
+                "score_response_file": str(raw_path),
+                "score_validation_file": str(validation_path),
+                "score_valid": not validation_errors,
+                "score_errors": validation_errors,
+            }
+        )
+    return score_records
+
+
+def select_steps_by_value(
+    parsed_chains: list[dict[str, Any]],
+    score_records: list[dict[str, Any]],
+    *,
+    k: int,
+    include_final_answer: bool,
+    context_before: int,
+    context_after: int,
+) -> list[dict[str, Any]]:
+    chain_by_key = {(chain["id"], chain["chain_index"]): chain for chain in parsed_chains}
+    selected: list[dict[str, Any]] = []
+    for record in score_records:
+        chain = chain_by_key.get((record["id"], record["chain_id"]))
+        if not chain:
+            continue
+        steps_by_id = {int(step["step_index"]): step for step in chain.get("steps", [])}
+        ranked_scores = sorted(
+            record.get("scores", []),
+            key=lambda row: (
+                row.get("combined_score", -999),
+                row.get("verification_value", 0),
+                row.get("risk", 0),
+                row.get("lean_feasibility", 0),
+            ),
+            reverse=True,
+        )
+        chosen = [row for row in ranked_scores if int(row.get("step_id", -1)) in steps_by_id][:k]
+        for score in chosen:
+            step = steps_by_id[int(score["step_id"])]
+            selected.append(
+                build_selected_step_row(
+                    chain,
+                    step,
+                    include_final_answer=include_final_answer,
+                    context_before=context_before,
+                    context_after=context_after,
+                    selection_score=score,
+                )
+            )
+    return selected
+
+
 def extract_lean_code(text: str) -> str:
     match = LEAN_BLOCK_RE.search(text)
     code = match.group(1) if match else text
@@ -459,6 +762,9 @@ def validate_wrapped_record(record: dict[str, Any], item: dict[str, Any]) -> lis
     if not isinstance(conclusion, dict) or not str(conclusion.get("text", "")).strip():
         errors.append("wrapped_claim.conclusion must contain text")
     else:
+        conclusion_text = str(conclusion.get("text", "")).strip()
+        if WRAP_DIAGNOSTIC_RE.search(conclusion_text):
+            errors.append("wrapped_claim.conclusion must assert the selected step, not diagnose or correct it")
         source = str(conclusion.get("source", "")).strip()
         if not (
             source == "problem"
@@ -466,8 +772,11 @@ def validate_wrapped_record(record: dict[str, Any], item: dict[str, Any]) -> lis
             or re.fullmatch(r"cot_step_\d+", source)
         ):
             errors.append("wrapped_claim.conclusion has invalid source")
-    if not str(wrapped.get("proof_description", "")).strip():
+    proof_description = str(wrapped.get("proof_description", "")).strip()
+    if not proof_description:
         errors.append("wrapped_claim.proof_description is required")
+    elif WRAP_DIAGNOSTIC_RE.search(proof_description):
+        errors.append("wrapped_claim.proof_description must not diagnose, refute, or correct the selected step")
     return errors
 
 
@@ -654,7 +963,9 @@ def generate_lean_contracts(
         "请把 wrapped_claim 形式化为局部 transition contract。"
         "Lean theorem 必须表达前提推出结论。"
         "不允许使用 sorry、admit。优先不用 axiom；如果需要，请优先写成 theorem 的局部 h_missing_* 假设。"
-        "只有在局部假设难以表达时，才允许使用具体命名的 obligation_* axiom。"
+        "复杂高层标准数学概念如果 mathlib 名称不明确或接口成本太高，可以先定义清晰的局部谓词/结构作为接口。"
+        "需要高层定理或库里难以找到的接口时，优先写成 theorem 的局部 h_missing_* 假设。"
+        "只有在局部接口难以表达时，才允许使用具体、窄范围、可读的 obligation_* axiom，且不能直接断言最终结论。"
         "如果 Lean 代码里需要注释，注释请用中文。"
     )
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -928,6 +1239,62 @@ def verify_lean_outputs(
     ]
 
 
+def write_run_summary(
+    path: Path,
+    *,
+    problems: list[dict[str, Any]],
+    parsed: list[dict[str, Any]],
+    selected: list[dict[str, Any]] | None = None,
+    step_selector: str,
+    step_scores: list[dict[str, Any]] | None = None,
+    wrapped: list[dict[str, Any]] | None = None,
+    generated: list[dict[str, Any]] | None = None,
+    verification: list[dict[str, Any]] | None = None,
+    stopped_after: str = "verification",
+) -> dict[str, Any]:
+    selected = selected or []
+    step_scores = step_scores or []
+    wrapped = wrapped or []
+    generated = generated or []
+    verification = verification or []
+    summary = {
+        "stopped_after": stopped_after,
+        "problems": len(problems),
+        "chains": len(parsed),
+        "parsed_steps": sum(len(chain.get("steps", [])) for chain in parsed),
+        "selected_steps": len(selected),
+        "step_selector": step_selector,
+        "scored_chains": len(step_scores),
+        "score_valid": sum(1 for row in step_scores if row.get("score_valid") is True),
+        "score_invalid": sum(1 for row in step_scores if row.get("score_valid") is not True),
+        "wrapped_claims": len(wrapped),
+        "wrap_valid": sum(1 for row in wrapped if row.get("wrap_valid") is True),
+        "wrap_invalid": sum(1 for row in wrapped if row.get("wrap_valid") is not True),
+        "low_value_steps": sum(1 for row in wrapped if row.get("low_value") is True),
+        "lean_files": len(generated),
+        "verified_ok": sum(1 for row in verification if row.get("ok") is True),
+        "verified_failed": sum(1 for row in verification if row.get("ok") is False),
+        "verified_skipped": sum(1 for row in verification if row.get("ok") is None),
+        "complete_proofs": sum(
+            1
+            for row in verification
+            if row.get("ok") is True and row.get("dependency_mode") == "complete"
+        ),
+        "local_missing_hypotheses": sum(
+            1
+            for row in verification
+            if row.get("ok") is True and row.get("dependency_mode") == "local_missing_hypotheses"
+        ),
+        "global_axiom_fallbacks": sum(
+            1
+            for row in verification
+            if row.get("ok") is True and row.get("dependency_mode") == "global_axiom_fallback"
+        ),
+    }
+    write_json(summary, path)
+    return summary
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default=existing_default_config(), help="YAML/JSON config path")
@@ -949,6 +1316,13 @@ def main() -> None:
     parser.add_argument("--cot-max-tokens", type=int, default=None)
     parser.add_argument("--wrap-max-tokens", type=int, default=None)
     parser.add_argument("--lean-max-tokens", type=int, default=None)
+    parser.add_argument("--score-max-tokens", type=int, default=None)
+    parser.add_argument(
+        "--step-selector",
+        choices=["random", "value"],
+        default=None,
+        help="random samples CoT steps; value asks the LLM to score verification value/risk",
+    )
     parser.add_argument("--wrap-repair-rounds", type=int, default=None)
     parser.add_argument("--wrap-context-before", type=int, default=None)
     parser.add_argument("--wrap-context-after", type=int, default=None)
@@ -972,6 +1346,12 @@ def main() -> None:
     parser.add_argument("--repair-rounds", type=int, default=None)
     parser.add_argument("--skip-lean-check", action="store_true")
     parser.add_argument("--include-final-answer", action="store_true")
+    parser.add_argument(
+        "--stop-after",
+        choices=["cot", "selection", "wrapped", "lean", "verification"],
+        default=None,
+        help="stop after a pipeline stage and write partial outputs/summary",
+    )
     args = parser.parse_args()
     config = read_config(args.config)
 
@@ -986,6 +1366,9 @@ def main() -> None:
     cot_max_tokens = args.cot_max_tokens if args.cot_max_tokens is not None else int(cfg_get(config, "llm.cot_max_tokens", 2048))
     wrap_max_tokens = args.wrap_max_tokens if args.wrap_max_tokens is not None else int(cfg_get(config, "llm.wrap_max_tokens", 4096))
     lean_max_tokens = args.lean_max_tokens if args.lean_max_tokens is not None else int(cfg_get(config, "llm.lean_max_tokens", 4096))
+    score_max_tokens = args.score_max_tokens if args.score_max_tokens is not None else int(cfg_get(config, "llm.score_max_tokens", 8192))
+    step_selector = args.step_selector or cfg_get(config, "run.step_selector", "random")
+    stop_after = args.stop_after or cfg_get(config, "run.stop_after", "verification")
     reasoning = parse_reasoning(args.reasoning if args.reasoning is not None else cfg_get(config, "llm.reasoning", None))
     openai_reasoning_effort = args.openai_reasoning_effort or cfg_get(config, "llm.openai_reasoning_effort", None)
     codex_reasoning_effort = (
@@ -1020,6 +1403,7 @@ def main() -> None:
     input_dir = run_dir / "input"
     cot_dir = run_dir / "cot"
     selection_dir = run_dir / "selection"
+    scores_dir = selection_dir / "scores"
     wrapped_dir = run_dir / "wrapped_claims"
     lean_dir = run_dir / "lean"
     verification_dir = run_dir / "verification"
@@ -1049,6 +1433,9 @@ def main() -> None:
         "cot_max_tokens": cot_max_tokens,
         "wrap_max_tokens": wrap_max_tokens,
         "lean_max_tokens": lean_max_tokens,
+        "score_max_tokens": score_max_tokens,
+        "step_selector": step_selector,
+        "stop_after": stop_after,
         "reasoning": reasoning,
         "openai_reasoning_effort": openai_reasoning_effort,
         "mock": args.mock,
@@ -1084,16 +1471,67 @@ def main() -> None:
 
     parsed = parse_cot_outputs(cot_outputs)
     write_jsonl(parsed, cot_dir / "cot_steps.jsonl")
+    if stop_after == "cot":
+        summary = write_run_summary(
+            run_dir / "run_summary.json",
+            problems=problems,
+            parsed=parsed,
+            step_selector=step_selector,
+            stopped_after=stop_after,
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        print(f"Run directory: {run_dir}")
+        return
 
-    selected = select_steps(
-        parsed,
-        k=sample_steps,
-        seed=seed,
-        include_final_answer=include_final_answer,
-        context_before=wrap_context_before,
-        context_after=wrap_context_after,
-    )
+    step_scores: list[dict[str, Any]] = []
+    if step_selector == "value":
+        step_scores = score_cot_steps(
+            parsed,
+            provider=llm_provider,
+            model=model,
+            mock=args.mock,
+            out_dir=scores_dir,
+            llm_timeout=llm_timeout,
+            score_max_tokens=score_max_tokens,
+            max_workers=max_workers,
+            reasoning=reasoning,
+            openai_reasoning_effort=openai_reasoning_effort,
+            codex_reasoning_effort=codex_reasoning_effort,
+            codex_sandbox=codex_sandbox,
+            codex_cwd=codex_cwd,
+        )
+        write_jsonl(step_scores, selection_dir / "step_scores.jsonl")
+        selected = select_steps_by_value(
+            parsed,
+            step_scores,
+            k=sample_steps,
+            include_final_answer=include_final_answer,
+            context_before=wrap_context_before,
+            context_after=wrap_context_after,
+        )
+    else:
+        selected = select_steps(
+            parsed,
+            k=sample_steps,
+            seed=seed,
+            include_final_answer=include_final_answer,
+            context_before=wrap_context_before,
+            context_after=wrap_context_after,
+        )
     write_jsonl(selected, selection_dir / "steps_selected.jsonl")
+    if stop_after == "selection":
+        summary = write_run_summary(
+            run_dir / "run_summary.json",
+            problems=problems,
+            parsed=parsed,
+            selected=selected,
+            step_selector=step_selector,
+            step_scores=step_scores,
+            stopped_after=stop_after,
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        print(f"Run directory: {run_dir}")
+        return
 
     wrapped = generate_wrapped_claims(
         selected,
@@ -1111,6 +1549,20 @@ def main() -> None:
         codex_cwd=codex_cwd,
     )
     write_jsonl(wrapped, wrapped_dir / "wrapped_claims.jsonl")
+    if stop_after == "wrapped":
+        summary = write_run_summary(
+            run_dir / "run_summary.json",
+            problems=problems,
+            parsed=parsed,
+            selected=selected,
+            step_selector=step_selector,
+            step_scores=step_scores,
+            wrapped=wrapped,
+            stopped_after=stop_after,
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        print(f"Run directory: {run_dir}")
+        return
 
     generated = generate_lean_contracts(
         wrapped,
@@ -1131,6 +1583,21 @@ def main() -> None:
         codex_cwd=codex_cwd,
     )
     write_jsonl(generated, lean_dir / "lean_generation_manifest.jsonl")
+    if stop_after == "lean":
+        summary = write_run_summary(
+            run_dir / "run_summary.json",
+            problems=problems,
+            parsed=parsed,
+            selected=selected,
+            step_selector=step_selector,
+            step_scores=step_scores,
+            wrapped=wrapped,
+            generated=generated,
+            stopped_after=stop_after,
+        )
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        print(f"Run directory: {run_dir}")
+        return
 
     verification = verify_lean_outputs(
         generated,
@@ -1140,36 +1607,18 @@ def main() -> None:
     )
     write_json(verification, verification_dir / "verification.json")
 
-    summary = {
-        "problems": len(problems),
-        "chains": len(parsed),
-        "parsed_steps": sum(len(chain.get("steps", [])) for chain in parsed),
-        "selected_steps": len(selected),
-        "wrapped_claims": len(wrapped),
-        "wrap_valid": sum(1 for row in wrapped if row.get("wrap_valid") is True),
-        "wrap_invalid": sum(1 for row in wrapped if row.get("wrap_valid") is not True),
-        "low_value_steps": sum(1 for row in wrapped if row.get("low_value") is True),
-        "lean_files": len(generated),
-        "verified_ok": sum(1 for row in verification if row.get("ok") is True),
-        "verified_failed": sum(1 for row in verification if row.get("ok") is False),
-        "verified_skipped": sum(1 for row in verification if row.get("ok") is None),
-        "complete_proofs": sum(
-            1
-            for row in verification
-            if row.get("ok") is True and row.get("dependency_mode") == "complete"
-        ),
-        "local_missing_hypotheses": sum(
-            1
-            for row in verification
-            if row.get("ok") is True and row.get("dependency_mode") == "local_missing_hypotheses"
-        ),
-        "global_axiom_fallbacks": sum(
-            1
-            for row in verification
-            if row.get("ok") is True and row.get("dependency_mode") == "global_axiom_fallback"
-        ),
-    }
-    write_json(summary, run_dir / "run_summary.json")
+    summary = write_run_summary(
+        run_dir / "run_summary.json",
+        problems=problems,
+        parsed=parsed,
+        selected=selected,
+        step_selector=step_selector,
+        step_scores=step_scores,
+        wrapped=wrapped,
+        generated=generated,
+        verification=verification,
+        stopped_after=stop_after,
+    )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print(f"Run directory: {run_dir}")
 
