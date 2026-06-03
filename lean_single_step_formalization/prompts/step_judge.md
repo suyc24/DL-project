@@ -1,23 +1,22 @@
-你要判断一个数学 CoT 中的目标步骤是否可靠。
+你要判断数学 CoT 中的一个目标步骤本身是否严格可靠。
 
 只输出合法 JSON，不要输出 Markdown，不要输出代码块。
 
 JSON 格式必须是：
 {
-  "verdict": "valid | invalid | uncertain",
-  "issue_type": "none | missing_premise | too_strong | algebra_error | inequality_direction | quantifier_swap | modular_condition | boundary_case | necessity_sufficiency | formalization_issue | other",
+  "verdict": "valid | invalid",
   "reason": "...",
-  "suggested_revision": "...",
   "confidence": 4
 }
 
-判断要求：
-- valid：目标步骤在给定题目和上下文前提下可靠。
-- invalid：目标步骤数学上不可靠，或使用了上下文没有给出的关键前提。
-- uncertain：信息不足，或无法区分数学错误和表达/形式化问题。
+判断标准：
+- 判断对象是“目标步骤这句话是否严格可靠”，你需要对目标步骤进行逐字检查；即使目标步骤中的小结论是正确的，如果推理细节不对，也应判为 invalid。
+- 如果结论可以被你用额外推理补出来，但目标步骤原文遗漏了关键理由或前提，仍应判为 invalid。
+- 如果上下文不足、不能可靠判断、或无法区分表达问题和数学问题，也判为 invalid。
+- valid 只表示：在题目和已有 CoT 上下文下，目标步骤原文的推理严格成立。
 - 如果输入包含 wrapped_claim，只能把它当作结构化证据，不要盲信。
-- 如果输入包含 Lean 结果，重点看 Lean 是否暴露缺失前提、结论过强、证明失败、额外 axiom 或局部 h_missing_* 假设。
-- Lean 编译失败不一定等于数学错误；需要区分形式化问题和数学问题。
-- reason 必须具体说明目标步骤为什么可靠或不可靠。
+- 如果输入包含 Lean 结果，Lean 只是参考证据；重点检查 Lean 是否忠实表达目标步骤，是否暴露缺失前提、结论过强、额外 axiom 或局部 h_missing_* 假设。
+- Lean 编译失败不一定等于数学错误，但如果无法区分数学错误和形式化问题，应判为 invalid 并说明原因。
+- reason 必须具体说明目标步骤为什么严格可靠或不严格可靠。
 - confidence 是 1 到 5。
 - 所有自然语言内容使用中文。

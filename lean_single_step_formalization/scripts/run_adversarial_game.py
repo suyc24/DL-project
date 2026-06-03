@@ -17,6 +17,19 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
 RUNS_DIR = ROOT / "experiments" / "runs"
 PROMPTS_DIR = ROOT / "prompts"
+ADAPTIVE_PROMPTS_DIR = PROMPTS_DIR / "adaptive_adversarial"
+FORMAT_REPAIR_ROUNDS = 2
+LEAN_BLOCK_RE = re.compile(r"```\s*(?:lean|lean4)?\s*\n(.*?)```", re.I | re.S)
+CHECK_GLOBAL_PROMPT = "adversarial_check_global.md"
+INITIAL_JUDGE_PROMPT = "adversarial_judge_initial.md"
+CHECK_PROMPT_NAMES = {
+    INITIAL_JUDGE_PROMPT,
+    "adversarial_lean_formalize.md",
+    "adversarial_lean_pass_review.md",
+    "adversarial_lean_fail_decide.md",
+    "adversarial_lean_repair.md",
+    "format_repair_lean.md",
+}
 
 sys.path.insert(0, str(SCRIPT_DIR))
 from llm_client import LLMCallError, call_llm
@@ -52,6 +65,265 @@ def load_prompt(name: str) -> str:
     return (PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
 
 
+def load_adaptive_prompt(name: str) -> str:
+    prompt = (ADAPTIVE_PROMPTS_DIR / name).read_text(encoding="utf-8").strip()
+    if name in CHECK_PROMPT_NAMES:
+        global_prompt = (ADAPTIVE_PROMPTS_DIR / CHECK_GLOBAL_PROMPT).read_text(encoding="utf-8").strip()
+        return f"{global_prompt}\n\n{prompt}"
+    return prompt
+
+
+def call_model(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    provider: str,
+    model: str | None,
+    temperature: float,
+    max_tokens: int,
+    timeout: int,
+    retries: int,
+    reasoning: bool | None,
+    openai_reasoning_effort: str | None,
+    codex_reasoning_effort: str,
+    codex_sandbox: str,
+    codex_cwd: str,
+    call_label: str,
+    codex_thread_file: str | None = None,
+) -> str:
+    return call_llm(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        provider=provider,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+        retries=retries,
+        reasoning=reasoning,
+        openai_reasoning_effort=openai_reasoning_effort,
+        codex_reasoning_effort=codex_reasoning_effort,
+        codex_sandbox=codex_sandbox,
+        codex_cwd=codex_cwd,
+        codex_thread_file=codex_thread_file,
+        call_label=call_label,
+    )
+
+
+def build_json_format_repair_prompt(original_user_prompt: str, raw: str, errors: list[str]) -> str:
+    return (
+        "原始任务：\n"
+        f"{original_user_prompt}\n\n"
+        "上一轮输出：\n"
+        f"{raw}\n\n"
+        "格式/结构错误：\n"
+        f"{json.dumps(errors, ensure_ascii=False, indent=2)}\n\n"
+        "请只返回修复后的 JSON 对象。"
+    )
+
+
+def build_lean_format_repair_prompt(original_user_prompt: str, raw: str, errors: list[str], theorem_name: str) -> str:
+    return (
+        f"指定 theorem 名字：{theorem_name}\n\n"
+        "原始任务：\n"
+        f"{original_user_prompt}\n\n"
+        "上一轮输出：\n"
+        f"{raw}\n\n"
+        "格式错误：\n"
+        f"{json.dumps(errors, ensure_ascii=False, indent=2)}\n\n"
+        "请只返回修复后的结果：如果原任务应继续形式化，返回 Lean 代码块；如果已经发现目标步骤错误，返回 invalid JSON。"
+    )
+
+
+def extract_invalid_judgment(text: str) -> dict[str, Any] | None:
+    try:
+        payload = extract_json_object(text)
+    except Exception:
+        return None
+    if payload.get("verdict") != "invalid":
+        return None
+    if not isinstance(payload.get("reason"), str) or not payload.get("reason", "").strip():
+        return None
+    try:
+        confidence = int(payload.get("confidence", 3))
+    except Exception:
+        confidence = 3
+    return {
+        "verdict": "invalid",
+        "reason": payload["reason"].strip(),
+        "lean_evidence": str(payload.get("lean_evidence", "模型在 Lean 阶段直接发现目标步骤不可靠。")),
+        "confidence": confidence,
+    }
+
+
+def extract_required_lean_code(text: str, theorem_name: str) -> str:
+    if not LEAN_BLOCK_RE.search(text):
+        raise ValueError("missing Lean code block")
+    code = extract_lean_code(text)
+    if theorem_name not in code:
+        raise ValueError(f"Lean code must contain theorem name {theorem_name}")
+    if "sorry" in code or "admit" in code:
+        raise ValueError("Lean code must not contain sorry or admit")
+    return code
+
+
+def lean_code_call(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    theorem_name: str,
+    provider: str,
+    model: str | None,
+    mock: bool,
+    mock_code: str,
+    llm_timeout: int,
+    max_tokens: int,
+    reasoning: bool | None,
+    openai_reasoning_effort: str | None,
+    codex_reasoning_effort: str,
+    codex_sandbox: str,
+    codex_cwd: str,
+    call_label: str,
+    codex_thread_file: str | None = None,
+) -> tuple[str, str, list[str], dict[str, Any] | None]:
+    if mock:
+        raw = f"```lean\n{mock_code}```"
+        return mock_code, raw, [], None
+    try:
+        raw = call_model(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            provider=provider,
+            model=model,
+            temperature=0.0,
+            max_tokens=max_tokens,
+            timeout=llm_timeout,
+            retries=2,
+            reasoning=reasoning,
+            openai_reasoning_effort=openai_reasoning_effort,
+            codex_reasoning_effort=codex_reasoning_effort,
+            codex_sandbox=codex_sandbox,
+            codex_cwd=codex_cwd,
+            codex_thread_file=codex_thread_file,
+            call_label=call_label,
+        )
+        current_raw = raw
+        current_errors: list[str] = []
+        for repair_idx in range(FORMAT_REPAIR_ROUNDS + 1):
+            invalid_judgment = extract_invalid_judgment(current_raw)
+            if invalid_judgment is not None:
+                return "", current_raw, [], invalid_judgment
+            try:
+                code = extract_required_lean_code(current_raw, theorem_name)
+                return code, current_raw, [], None
+            except Exception as exc:
+                current_errors = [str(exc)]
+            if repair_idx >= FORMAT_REPAIR_ROUNDS:
+                break
+            current_raw = call_model(
+                system_prompt=load_adaptive_prompt("format_repair_lean.md"),
+                user_prompt=build_lean_format_repair_prompt(user_prompt, current_raw, current_errors, theorem_name),
+                provider=provider,
+                model=model,
+                temperature=0.0,
+                max_tokens=max_tokens,
+                timeout=llm_timeout,
+                retries=1,
+                reasoning=reasoning,
+                openai_reasoning_effort=openai_reasoning_effort,
+                codex_reasoning_effort=codex_reasoning_effort,
+                codex_sandbox=codex_sandbox,
+                codex_cwd=codex_cwd,
+                codex_thread_file=codex_thread_file,
+                call_label=f"{call_label}-format-repair-{repair_idx + 1}",
+            )
+        invalid_judgment = extract_invalid_judgment(current_raw)
+        if invalid_judgment is not None:
+            return "", current_raw, [], invalid_judgment
+        return extract_lean_code(current_raw), current_raw, current_errors, None
+    except (LLMCallError, Exception) as exc:
+        code = f"import Mathlib\n\n-- Lean 生成调用失败：{exc}\ntheorem {theorem_name} : False := by\n  exact False.elim ?missing\n"
+        return code, str(exc), [str(exc)], None
+
+
+def validate_judge_json(payload: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if payload.get("verdict") not in {"valid", "invalid"}:
+        errors.append("verdict must be one of valid, invalid")
+    if not isinstance(payload.get("reason"), str) or not payload.get("reason", "").strip():
+        errors.append("reason must be non-empty string")
+    if "confidence" not in payload:
+        errors.append("confidence is required")
+    return errors
+
+
+def validate_fail_decide_json(payload: dict[str, Any]) -> list[str]:
+    errors = validate_judge_json(payload)
+    if payload.get("action") not in {"return_invalid", "continue_repair"}:
+        errors.append("action must be one of return_invalid, continue_repair")
+    if payload.get("action") == "continue_repair" and not str(payload.get("repair_instruction", "")).strip():
+        errors.append("repair_instruction must be non-empty when action is continue_repair")
+    return errors
+
+
+def validate_attack_for_candidate(candidate: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+    errors = validate_attack(payload)
+    if payload.get("attackable") is False:
+        return errors
+    if not isinstance(payload.get("modified_cot"), str) or not payload.get("modified_cot", "").strip():
+        errors.append("modified_cot must be non-empty string")
+    return errors
+
+
+def parse_json_with_format_repair(
+    *,
+    raw: str,
+    validator: Any,
+    original_user_prompt: str,
+    provider: str,
+    model: str | None,
+    llm_timeout: int,
+    max_tokens: int,
+    reasoning: bool | None,
+    openai_reasoning_effort: str | None,
+    codex_reasoning_effort: str,
+    codex_sandbox: str,
+    codex_cwd: str,
+    call_label: str,
+    codex_thread_file: str | None = None,
+) -> tuple[dict[str, Any], str, list[str]]:
+    current_raw = raw
+    current_errors: list[str] = []
+    for repair_idx in range(FORMAT_REPAIR_ROUNDS + 1):
+        try:
+            parsed = extract_json_object(current_raw)
+            current_errors = validator(parsed) if validator else []
+            if not current_errors:
+                return parsed, current_raw, []
+        except Exception as exc:
+            current_errors = [str(exc)]
+        if repair_idx >= FORMAT_REPAIR_ROUNDS:
+            break
+        current_raw = call_model(
+            system_prompt=load_adaptive_prompt("format_repair_json.md"),
+            user_prompt=build_json_format_repair_prompt(original_user_prompt, current_raw, current_errors),
+            provider=provider,
+            model=model,
+            temperature=0.0,
+            max_tokens=max_tokens,
+            timeout=llm_timeout,
+            retries=1,
+            reasoning=reasoning,
+            openai_reasoning_effort=openai_reasoning_effort,
+            codex_reasoning_effort=codex_reasoning_effort,
+            codex_sandbox=codex_sandbox,
+            codex_cwd=codex_cwd,
+            codex_thread_file=codex_thread_file,
+            call_label=f"{call_label}-format-repair-{repair_idx + 1}",
+        )
+    return {}, current_raw, current_errors
+
+
 def json_call(
     *,
     system_prompt: str,
@@ -68,12 +340,14 @@ def json_call(
     codex_sandbox: str,
     codex_cwd: str,
     call_label: str,
+    validator: Any = validate_judge_json,
+    codex_thread_file: str | None = None,
 ) -> tuple[dict[str, Any], str, list[str]]:
     if mock:
         payload = mock_payload or {}
         return payload, json.dumps(payload, ensure_ascii=False, indent=2), []
     try:
-        raw = call_llm(
+        raw = call_model(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             provider=provider,
@@ -87,14 +361,35 @@ def json_call(
             codex_reasoning_effort=codex_reasoning_effort,
             codex_sandbox=codex_sandbox,
             codex_cwd=codex_cwd,
+            codex_thread_file=codex_thread_file,
             call_label=call_label,
         )
-        return extract_json_object(raw), raw, []
+        parsed, final_raw, format_errors = parse_json_with_format_repair(
+            raw=raw,
+            validator=validator,
+            original_user_prompt=user_prompt,
+            provider=provider,
+            model=model,
+            llm_timeout=llm_timeout,
+            max_tokens=max_tokens,
+            reasoning=reasoning,
+            openai_reasoning_effort=openai_reasoning_effort,
+            codex_reasoning_effort=codex_reasoning_effort,
+            codex_sandbox=codex_sandbox,
+            codex_cwd=codex_cwd,
+            codex_thread_file=codex_thread_file,
+            call_label=call_label,
+        )
+        if not format_errors:
+            return parsed, final_raw, []
+        return {"verdict": "invalid", "reason": "; ".join(format_errors), "confidence": 1}, final_raw, format_errors
     except (LLMCallError, Exception) as exc:
-        return {"verdict": "uncertain", "issue_type": "other", "reason": str(exc), "confidence": 1}, str(exc), [str(exc)]
+        return {"verdict": "invalid", "reason": str(exc), "confidence": 1}, str(exc), [str(exc)]
 
 
 def build_context_text(row: dict[str, Any]) -> str:
+    if row.get("adversarial") and row.get("mutated_cot"):
+        return str(row["mutated_cot"])
     return "\n".join(
         f"{step['step_id']}. {'[目标] ' if step.get('is_selected') else ''}{step['text']}"
         for step in row.get("context_steps", [])
@@ -127,17 +422,15 @@ def run_initial_judge(
     codex_reasoning_effort: str,
     codex_sandbox: str,
     codex_cwd: str,
+    codex_thread_file: str | None = None,
 ) -> dict[str, Any]:
     mock_payload = {
-        "verdict": "valid" if not row.get("adversarial") else "uncertain",
-        "issue_type": "none",
+        "verdict": "valid" if not row.get("adversarial") else "invalid",
         "reason": f"mock {label} initial judge",
-        "should_try_lean": True,
-        "lean_target": row.get("target_step", ""),
         "confidence": 3,
     }
     parsed, raw, errors = json_call(
-        system_prompt=load_prompt("adversarial_judge_initial.md"),
+        system_prompt=load_adaptive_prompt(INITIAL_JUDGE_PROMPT),
         user_prompt=build_initial_judge_prompt(row),
         provider=provider,
         model=model,
@@ -151,6 +444,7 @@ def run_initial_judge(
         codex_sandbox=codex_sandbox,
         codex_cwd=codex_cwd,
         call_label=f"{row['id']}-{label}-initial-judge",
+        codex_thread_file=codex_thread_file,
     )
     out_dir = round_dir / label
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -165,7 +459,7 @@ def build_lean_formalize_prompt(row: dict[str, Any], initial: dict[str, Any], th
         f"题目：\n{row['question']}\n\n"
         f"CoT 上下文：\n{build_context_text(row)}\n\n"
         f"目标步骤：\n{row['target_step']}\n\n"
-        f"lean_target：\n{initial.get('lean_target') or row.get('target_step')}\n\n"
+        f"初步判断：\n{json.dumps(initial, ensure_ascii=False, indent=2)}\n\n"
         "请直接形式化这个目标步骤。"
     )
 
@@ -226,36 +520,51 @@ def run_direct_lean_assist(
     codex_reasoning_effort: str,
     codex_sandbox: str,
     codex_cwd: str,
+    codex_thread_file: str | None = None,
 ) -> dict[str, Any]:
     out_dir = round_dir / "lean_direct"
     out_dir.mkdir(parents=True, exist_ok=True)
     theorem_name = safe_lean_name(row)
-    system_formalize = load_prompt("adversarial_lean_formalize.md")
-    if mock:
-        code = f"import Mathlib\n\ntheorem {theorem_name} : True := by\n  trivial\n"
-        raw = f"```lean\n{code}```"
-    else:
-        raw = call_llm(
-            system_prompt=system_formalize,
-            user_prompt=build_lean_formalize_prompt(row, initial, theorem_name),
-            provider=provider,
-            model=model,
-            temperature=0.0,
-            max_tokens=lean_max_tokens,
-            timeout=llm_timeout,
-            retries=2,
-            reasoning=reasoning,
-            openai_reasoning_effort=openai_reasoning_effort,
-            codex_reasoning_effort=codex_reasoning_effort,
-            codex_sandbox=codex_sandbox,
-            codex_cwd=codex_cwd,
-            call_label=f"{row['id']}-direct-lean",
-        )
-        code = extract_lean_code(raw)
+    system_formalize = load_adaptive_prompt("adversarial_lean_formalize.md")
+    mock_code = f"import Mathlib\n\ntheorem {theorem_name} : True := by\n  trivial\n"
+    code, raw, lean_format_errors, formalize_invalid = lean_code_call(
+        system_prompt=system_formalize,
+        user_prompt=build_lean_formalize_prompt(row, initial, theorem_name),
+        theorem_name=theorem_name,
+        provider=provider,
+        model=model,
+        mock=mock,
+        mock_code=mock_code,
+        llm_timeout=llm_timeout,
+        max_tokens=lean_max_tokens,
+        reasoning=reasoning,
+        openai_reasoning_effort=openai_reasoning_effort,
+        codex_reasoning_effort=codex_reasoning_effort,
+        codex_sandbox=codex_sandbox,
+        codex_cwd=codex_cwd,
+        call_label=f"{row['id']}-direct-lean",
+        codex_thread_file=codex_thread_file,
+    )
     (out_dir / "lean.response.txt").write_text(raw, encoding="utf-8")
 
     decisions: list[dict[str, Any]] = []
     checks: list[dict[str, Any]] = []
+    format_errors: list[dict[str, Any]] = []
+    if lean_format_errors:
+        format_errors.append({"stage": "lean_formalize", "errors": lean_format_errors})
+    if formalize_invalid is not None:
+        result = {
+            "mode": "lean_assisted",
+            "stage": "formalize_return_invalid",
+            "judgment": formalize_invalid,
+            "errors": lean_format_errors,
+            "lean_used": False,
+            "lean_checks": [],
+            "fail_decisions": [],
+            "format_errors": format_errors,
+        }
+        write_json(result, out_dir / "lean_assisted_result.json")
+        return result
     final_judgment: dict[str, Any] | None = None
     final_raw = ""
     final_errors: list[str] = []
@@ -274,13 +583,12 @@ def run_direct_lean_assist(
         if check.get("ok") is True:
             mock_payload = {
                 "verdict": "valid",
-                "issue_type": "none",
                 "reason": "mock lean pass review",
                 "lean_evidence": "mock",
                 "confidence": 3,
             }
             final_judgment, final_raw, final_errors = json_call(
-                system_prompt=load_prompt("adversarial_lean_pass_review.md"),
+                system_prompt=load_adaptive_prompt("adversarial_lean_pass_review.md"),
                 user_prompt=build_lean_review_prompt(row, initial, code, check),
                 provider=provider,
                 model=model,
@@ -294,19 +602,19 @@ def run_direct_lean_assist(
                 codex_sandbox=codex_sandbox,
                 codex_cwd=codex_cwd,
                 call_label=f"{row['id']}-lean-pass-review",
+                codex_thread_file=codex_thread_file,
             )
             break
 
         mock_payload = {
-            "action": "return_invalid" if row.get("adversarial") else "return_uncertain",
-            "verdict": "invalid" if row.get("adversarial") else "uncertain",
-            "issue_type": row.get("gold_issue_type", "other"),
+            "action": "return_invalid",
+            "verdict": "invalid",
             "reason": "mock lean fail decision",
             "repair_instruction": "",
             "confidence": 3,
         }
         decision, raw_decision, errors = json_call(
-            system_prompt=load_prompt("adversarial_lean_fail_decide.md"),
+            system_prompt=load_adaptive_prompt("adversarial_lean_fail_decide.md"),
             user_prompt=build_lean_review_prompt(row, initial, code, check),
             provider=provider,
             model=model,
@@ -320,13 +628,14 @@ def run_direct_lean_assist(
             codex_sandbox=codex_sandbox,
             codex_cwd=codex_cwd,
             call_label=f"{row['id']}-lean-fail-decide-{attempt}",
+            validator=validate_fail_decide_json,
+            codex_thread_file=codex_thread_file,
         )
         decision_record = {"attempt": attempt, "decision": decision, "raw": raw_decision, "errors": errors}
         decisions.append(decision_record)
         if decision.get("action") != "continue_repair" or attempt >= repair_rounds:
             final_judgment = {
-                "verdict": decision.get("verdict", "uncertain"),
-                "issue_type": decision.get("issue_type", "other"),
+                "verdict": decision.get("verdict", "invalid"),
                 "reason": decision.get("reason", ""),
                 "lean_evidence": "Lean 未通过；fail_decide 阶段返回。",
                 "confidence": decision.get("confidence", 1),
@@ -337,34 +646,44 @@ def run_direct_lean_assist(
         if mock:
             code = code
         else:
-            repair_raw = call_llm(
-                system_prompt=load_prompt("adversarial_lean_repair.md"),
-                user_prompt=build_lean_repair_prompt(code, check, decision),
+            repair_prompt = build_lean_repair_prompt(code, check, decision)
+            code, repair_raw, repair_format_errors, repair_invalid = lean_code_call(
+                system_prompt=load_adaptive_prompt("adversarial_lean_repair.md"),
+                user_prompt=repair_prompt,
+                theorem_name=theorem_name,
                 provider=provider,
                 model=model,
-                temperature=0.0,
+                mock=mock,
+                mock_code=code,
+                llm_timeout=llm_timeout,
                 max_tokens=lean_max_tokens,
-                timeout=llm_timeout,
-                retries=1,
                 reasoning=reasoning,
                 openai_reasoning_effort=openai_reasoning_effort,
                 codex_reasoning_effort=codex_reasoning_effort,
                 codex_sandbox=codex_sandbox,
                 codex_cwd=codex_cwd,
                 call_label=f"{row['id']}-direct-lean-repair-{attempt + 1}",
+                codex_thread_file=codex_thread_file,
             )
             (out_dir / f"repair_{attempt + 1}.response.txt").write_text(repair_raw, encoding="utf-8")
-            code = extract_lean_code(repair_raw)
+            if repair_format_errors:
+                format_errors.append({"stage": f"lean_repair_{attempt + 1}", "errors": repair_format_errors})
+            if repair_invalid is not None:
+                final_judgment = repair_invalid
+                final_raw = repair_raw
+                final_errors = repair_format_errors
+                break
 
     (out_dir / "final_review.response.txt").write_text(final_raw, encoding="utf-8")
     result = {
         "mode": "lean_assisted",
         "stage": "lean_review",
-        "judgment": final_judgment or {"verdict": "uncertain", "issue_type": "other", "reason": "no final judgment", "confidence": 1},
+        "judgment": final_judgment or {"verdict": "invalid", "reason": "no final judgment", "confidence": 1},
         "errors": final_errors,
         "lean_used": True,
         "lean_checks": checks,
         "fail_decisions": decisions,
+        "format_errors": format_errors,
     }
     write_json(result, out_dir / "lean_assisted_result.json")
     return result
@@ -381,7 +700,6 @@ def build_hacker_feedback_prompt(
         {
             "mode": row["mode"],
             "verdict": row.get("judgment", {}).get("verdict"),
-            "issue_type": row.get("judgment", {}).get("issue_type"),
             "reason": row.get("judgment", {}).get("reason"),
             "confidence": row.get("judgment", {}).get("confidence"),
         }
@@ -400,14 +718,20 @@ def build_hacker_feedback_prompt(
         diagnosis = "上一轮攻击不是目标样本。"
     return (
         f"{diagnosis}"
-        "请在同一个原始目标步骤上重新生成一个更隐蔽的新 flawed_step。\n\n"
+        "请基于同一个题目和目标步骤序号，重新生成一个更隐蔽的新攻击。\n\n"
         f"上一轮轮次：{round_idx}\n"
-        f"上一轮 flawed_step：\n{previous_attack.get('flawed_step', '')}\n\n"
+        f"上一轮 flawed_step 编号：\n{previous_attack.get('flawed_step', '')}\n\n"
+        f"上一轮 modified_cot：\n{previous_attack.get('modified_cot', '')}\n\n"
+        f"上一轮错误理由：\n{previous_attack.get('why_invalid', '')}\n\n"
         f"上一轮评测器反馈：\n{json.dumps(compact_judgments, ensure_ascii=False, indent=2)}\n\n"
         "改进要求：\n"
         "- 不要重复上一轮的错误形式。\n"
-        "- 错误仍必须集中在目标步骤本身。\n"
-        "- 让错误更像正常数学证明中的隐含前提、边界遗漏或细微等价偷换。\n\n"
+        "- CoT 只是参考，可以修改任意数量的 CoT 步骤，但要尽量少改。\n"
+        "- flawed_step 必须是 modified_cot 中故意写错的 Step 编号。\n"
+        "- 先模拟强文本 verifier 会如何逐字抓错；如果会被一两句话直接抓住，换方向。\n"
+        "- 避免明显边界遗漏、必要/充分偷换、直接反例、简单算术错误、量词明面反转。\n"
+        "- 禁止只改常数、系数、符号或模数作为主要攻击。\n"
+        "- 优先制造更适合形式化暴露的错误：统一 witness/参数独立性/量词顺序/定义域或非零条件/分支覆盖/局部到全局接口缺失。\n\n"
         f"{base_prompt}"
     )
 
@@ -437,7 +761,7 @@ def call_hacker(
         return parsed, json.dumps(parsed, ensure_ascii=False, indent=2), []
 
     if previous_attack and previous_judgments:
-        actual_system_prompt = load_prompt("adversarial_hacker_retry.md")
+        actual_system_prompt = load_adaptive_prompt("adversarial_hacker_retry.md")
         user_prompt = build_hacker_feedback_prompt(
             candidate,
             previous_attack,
@@ -446,11 +770,12 @@ def call_hacker(
             previous_status or "other",
         )
     else:
-        actual_system_prompt = load_prompt("adversarial_hacker_init.md")
+        actual_system_prompt = load_adaptive_prompt("adversarial_hacker_init.md")
         user_prompt = build_hacker_prompt(candidate)
 
+    thread_file = candidate_thread_file(candidate, codex_thread_dir)
     try:
-        raw = call_llm(
+        raw = call_model(
             system_prompt=actual_system_prompt,
             user_prompt=user_prompt,
             provider=provider,
@@ -464,11 +789,28 @@ def call_hacker(
             codex_reasoning_effort=codex_reasoning_effort,
             codex_sandbox=codex_sandbox,
             codex_cwd=codex_cwd,
-            codex_thread_file=candidate_thread_file(candidate, codex_thread_dir),
+            codex_thread_file=thread_file,
             call_label=f"{candidate['id']}-c{candidate['chain_id']}-s{candidate['step_id']}-hack-r{round_idx}",
         )
-        parsed = extract_json_object(raw)
-        errors = validate_attack(parsed)
+        parsed, final_raw, errors = parse_json_with_format_repair(
+            raw=raw,
+            validator=lambda payload: validate_attack_for_candidate(candidate, payload),
+            original_user_prompt=user_prompt,
+            provider=provider,
+            model=model,
+            llm_timeout=llm_timeout,
+            max_tokens=max_tokens,
+            reasoning=reasoning,
+            openai_reasoning_effort=openai_reasoning_effort,
+            codex_reasoning_effort=codex_reasoning_effort,
+            codex_sandbox=codex_sandbox,
+            codex_cwd=codex_cwd,
+            codex_thread_file=thread_file,
+            call_label=f"{candidate['id']}-c{candidate['chain_id']}-s{candidate['step_id']}-hack-r{round_idx}",
+        )
+        if errors:
+            return {"attackable": False}, final_raw, errors
+        raw = final_raw
         return parsed, raw, errors
     except (LLMCallError, Exception) as exc:
         return {"attackable": False}, str(exc), [str(exc)]
@@ -648,20 +990,63 @@ def write_markdown_report(trace: list[dict[str, Any]], summary: dict[str, Any], 
         lines.append(f"### {row['case_id']} round {row['round']}")
         lines.append("")
         lines.append(f"- status: {row['round_status']}")
-        lines.append(f"- flaw_type: {row.get('attack', {}).get('flaw_type')}")
-        lines.append(f"- flawed_step: {row.get('attack', {}).get('flawed_step')}")
-        lines.append(f"- gold: {row.get('attack', {}).get('why_invalid')}")
+        attack = row.get("attack", {})
+        lines.append("")
+        lines.append("#### Hacker")
+        lines.append("")
+        lines.append(f"- flawed_step: {attack.get('flawed_step')}")
+        if attack.get("modified_cot"):
+            lines.append("- modified_cot:")
+            lines.append("")
+            lines.append("```text")
+            lines.append(str(attack.get("modified_cot")))
+            lines.append("```")
+        lines.append(f"- why_invalid: {attack.get('why_invalid')}")
+        lines.append("")
+        lines.append("#### Judges")
+        lines.append("")
         for judgment in row.get("judgments", []):
+            if judgment.get("mode") == "lean_initial":
+                continue
             payload = judgment.get("judgment", {})
-            reason = str(payload.get("reason", "")).replace("\n", " ")
-            if len(reason) > 260:
-                reason = reason[:260] + "..."
+            reason = str(payload.get("reason", "")).strip()
+            lean_evidence = str(payload.get("lean_evidence", "")).strip()
             lines.append(
-                f"- {judgment['mode']}: {payload.get('verdict')} / {payload.get('issue_type')} "
-                f"(confidence={payload.get('confidence')}) - {reason}"
+                f"- {judgment['mode']}: {payload.get('verdict')} (confidence={payload.get('confidence')})"
             )
+            lines.append(f"  - reason: {reason}")
+            if lean_evidence:
+                lines.append(f"  - lean_evidence: {lean_evidence}")
         lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def build_summary(trace: list[dict[str, Any]], *, cases: int, target_lean_rescues: int, run_dir: Path) -> dict[str, Any]:
+    return {
+        "cases": cases,
+        "rounds": len(trace),
+        "lean_rescue": sum(1 for row in trace if row.get("round_status") == "lean_rescue"),
+        "model_rescue_no_lean": sum(1 for row in trace if row.get("round_status") == "model_rescue_no_lean"),
+        "wrapped_or_lean_rescue": sum(1 for row in trace if row.get("round_status") == "wrapped_or_lean_rescue"),
+        "too_obvious_rounds": sum(1 for row in trace if row.get("round_status") == "too_obvious"),
+        "lean_missed": sum(1 for row in trace if row.get("round_status") == "lean_missed"),
+        "lean_weaker_than_baseline": sum(1 for row in trace if row.get("round_status") == "lean_weaker_than_baseline"),
+        "hacker_failed": sum(1 for row in trace if row.get("round_status") == "hacker_failed"),
+        "target_lean_rescues": target_lean_rescues,
+        "output": str(run_dir),
+    }
+
+
+def write_run_progress(trace: list[dict[str, Any]], *, cases: int, target_lean_rescues: int, run_dir: Path) -> dict[str, Any]:
+    write_jsonl(trace, run_dir / "game_trace.jsonl")
+    summary = build_summary(trace, cases=cases, target_lean_rescues=target_lean_rescues, run_dir=run_dir)
+    write_json(summary, run_dir / "summary.json")
+    write_markdown_report(trace, summary, run_dir / "report.md")
+    return summary
+
+
+def load_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def main() -> None:
@@ -687,6 +1072,7 @@ def main() -> None:
     parser.add_argument("--project-dir", default=None)
     parser.add_argument("--lean-timeout", type=int, default=None)
     parser.add_argument("--skip-lean-check", action="store_true")
+    parser.add_argument("--resume", action="store_true", help="continue an existing run-id from completed round files")
     parser.add_argument("--reasoning", choices=["auto", "enabled", "disabled"], default=None)
     parser.add_argument("--openai-reasoning-effort", choices=["high", "max"], default=None)
     parser.add_argument("--codex-reasoning-effort", default=None)
@@ -716,15 +1102,17 @@ def main() -> None:
         or os.environ.get("CODEX_REASONING_EFFORT")
         or cfg_get(config, "llm.codex_reasoning_effort", "high")
     )
-    codex_sandbox = args.codex_sandbox or os.environ.get("CODEX_SANDBOX") or cfg_get(config, "llm.codex_sandbox", "read-only")
+    codex_sandbox = args.codex_sandbox or os.environ.get("CODEX_SANDBOX") or cfg_get(config, "llm.codex_sandbox", "danger-full-access")
     codex_cwd = args.codex_cwd or cfg_get(config, "llm.codex_cwd", str(REPO_ROOT))
 
     run_dir = RUNS_DIR / args.run_id
     input_dir = run_dir / "input"
     thread_dir = run_dir / "hacker_threads"
+    lean_thread_dir = run_dir / "lean_threads"
     rounds_dir = run_dir / "rounds"
     run_dir.mkdir(parents=True, exist_ok=True)
     thread_dir.mkdir(parents=True, exist_ok=True)
+    lean_thread_dir.mkdir(parents=True, exist_ok=True)
     rounds_dir.mkdir(parents=True, exist_ok=True)
 
     candidates = read_jsonl(Path(args.candidates))
@@ -743,39 +1131,102 @@ def main() -> None:
             "project_dir": str(project_dir),
             "lean_timeout": lean_timeout,
             "skip_lean_check": skip_lean_check,
+            "hacker_thread_dir": str(thread_dir),
+            "lean_thread_dir": str(lean_thread_dir),
             "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         },
         run_dir / "run_config.json",
     )
 
-    hacker_prompt = load_prompt("adversarial_hacker_init.md")
+    hacker_prompt = load_adaptive_prompt("adversarial_hacker_init.md")
     trace: list[dict[str, Any]] = []
     for case_idx, candidate in enumerate(candidates, start=1):
         case_id = safe_id(f"{case_idx}_{candidate['id']}_c{candidate['chain_id']}_s{candidate['step_id']}")
         previous_attack: dict[str, Any] | None = None
         previous_judgments: list[dict[str, Any]] | None = None
         previous_status: str | None = None
-        for round_idx in range(1, args.max_rounds + 1):
+        start_round = 1
+        pending_attack: tuple[dict[str, Any], str, list[str]] | None = None
+        case_done = False
+        if args.resume:
+            for resume_round in range(1, args.max_rounds + 1):
+                resume_dir = rounds_dir / case_id / f"round_{resume_round}"
+                attack_path = resume_dir / "attack.json"
+                judgments_path = resume_dir / "judgments.jsonl"
+                if judgments_path.exists():
+                    attack_record = load_json(attack_path) if attack_path.exists() else {"attack": {}, "errors": []}
+                    judgments = read_jsonl(judgments_path)
+                    round_status = classify_round(judgments)
+                    attack = attack_record.get("attack", {})
+                    trace.append(
+                        {
+                            "case_id": case_id,
+                            "round": resume_round,
+                            "round_dir": str(resume_dir),
+                            "round_status": round_status,
+                            "attack": attack,
+                            "judgments": judgments,
+                            "resumed": True,
+                        }
+                    )
+                    previous_attack = attack
+                    previous_judgments = judgments
+                    previous_status = round_status
+                    start_round = resume_round + 1
+                    if args.target_lean_rescues and sum(
+                        1 for row in trace if row.get("round_status") == "lean_rescue"
+                    ) >= args.target_lean_rescues:
+                        case_done = True
+                        break
+                    if round_status == "lean_rescue":
+                        case_done = True
+                        break
+                    if not args.continue_after_non_obvious and round_status != "too_obvious":
+                        case_done = True
+                        break
+                    continue
+                if attack_path.exists():
+                    attack_record = load_json(attack_path)
+                    raw_attack = (resume_dir / "hacker_response.txt").read_text(encoding="utf-8") if (resume_dir / "hacker_response.txt").exists() else ""
+                    pending_attack = (attack_record.get("attack", {}), raw_attack, attack_record.get("errors", []))
+                    start_round = resume_round
+                    break
+                break
+        if case_done:
+            if args.target_lean_rescues and sum(
+                1 for row in trace if row.get("round_status") == "lean_rescue"
+            ) >= args.target_lean_rescues:
+                break
+            continue
+
+        for round_idx in range(start_round, args.max_rounds + 1):
             round_dir = rounds_dir / case_id / f"round_{round_idx}"
-            attack, raw_attack, attack_errors = call_hacker(
-                candidate,
-                round_idx=round_idx,
-                previous_attack=previous_attack,
-                previous_judgments=previous_judgments,
-                previous_status=previous_status,
-                system_prompt=hacker_prompt,
-                provider=provider,
-                model=model,
-                mock=args.mock,
-                llm_timeout=llm_timeout,
-                max_tokens=args.hacker_max_tokens,
-                reasoning=reasoning,
-                openai_reasoning_effort=openai_reasoning_effort,
-                codex_reasoning_effort=codex_reasoning_effort,
-                codex_sandbox=codex_sandbox,
-                codex_cwd=codex_cwd,
-                codex_thread_dir=str(thread_dir),
-            )
+            lean_thread_file_path = lean_thread_dir / case_id / f"round_{round_idx}.thread"
+            lean_thread_file_path.parent.mkdir(parents=True, exist_ok=True)
+            lean_thread_file = str(lean_thread_file_path)
+            if pending_attack is not None and round_idx == start_round:
+                attack, raw_attack, attack_errors = pending_attack
+                pending_attack = None
+            else:
+                attack, raw_attack, attack_errors = call_hacker(
+                    candidate,
+                    round_idx=round_idx,
+                    previous_attack=previous_attack,
+                    previous_judgments=previous_judgments,
+                    previous_status=previous_status,
+                    system_prompt=hacker_prompt,
+                    provider=provider,
+                    model=model,
+                    mock=args.mock,
+                    llm_timeout=llm_timeout,
+                    max_tokens=args.hacker_max_tokens,
+                    reasoning=reasoning,
+                    openai_reasoning_effort=openai_reasoning_effort,
+                    codex_reasoning_effort=codex_reasoning_effort,
+                    codex_sandbox=codex_sandbox,
+                    codex_cwd=codex_cwd,
+                    codex_thread_dir=str(thread_dir),
+                )
             round_dir.mkdir(parents=True, exist_ok=True)
             (round_dir / "hacker_response.txt").write_text(raw_attack, encoding="utf-8")
             write_json({"attack": attack, "errors": attack_errors}, round_dir / "attack.json")
@@ -789,6 +1240,12 @@ def main() -> None:
                         "attack_errors": attack_errors,
                         "judgments": [],
                     }
+                )
+                write_run_progress(
+                    trace,
+                    cases=len(candidates),
+                    target_lean_rescues=args.target_lean_rescues,
+                    run_dir=run_dir,
                 )
                 break
 
@@ -823,20 +1280,17 @@ def main() -> None:
                 codex_reasoning_effort=codex_reasoning_effort,
                 codex_sandbox=codex_sandbox,
                 codex_cwd=codex_cwd,
+                codex_thread_file=lean_thread_file,
             )
             initial_payload = lean_initial.get("judgment", {})
-            if (
-                initial_payload.get("verdict") == "invalid"
-                or initial_payload.get("should_try_lean") is False
-            ):
+            if initial_payload.get("verdict") != "valid":
                 lean_result = {
                     "mode": "lean_assisted",
                     "stage": "initial_only",
                     "judgment": {
-                        "verdict": initial_payload.get("verdict", "uncertain"),
-                        "issue_type": initial_payload.get("issue_type", "other"),
+                        "verdict": initial_payload.get("verdict", "invalid"),
                         "reason": initial_payload.get("reason", ""),
-                        "lean_evidence": "Lean 未运行：初始判断已返回 invalid 或 should_try_lean=false。",
+                        "lean_evidence": "Lean 未运行：初步判断没有认为目标步骤正确。",
                         "confidence": initial_payload.get("confidence", 1),
                     },
                     "errors": lean_initial.get("errors", []),
@@ -862,6 +1316,7 @@ def main() -> None:
                     codex_reasoning_effort=codex_reasoning_effort,
                     codex_sandbox=codex_sandbox,
                     codex_cwd=codex_cwd,
+                    codex_thread_file=lean_thread_file,
                 )
             judgments = [baseline_result, lean_initial, lean_result]
             write_jsonl(judgments, round_dir / "judgments.jsonl")
@@ -873,8 +1328,15 @@ def main() -> None:
                 "round_status": round_status,
                 "attack": attack,
                 "judgments": judgments,
+                "lean_thread_file": lean_thread_file,
             }
             trace.append(trace_row)
+            write_run_progress(
+                trace,
+                cases=len(candidates),
+                target_lean_rescues=args.target_lean_rescues,
+                run_dir=run_dir,
+            )
             previous_attack = attack
             previous_judgments = judgments
             previous_status = round_status
@@ -891,22 +1353,12 @@ def main() -> None:
         ) >= args.target_lean_rescues:
             break
 
-    write_jsonl(trace, run_dir / "game_trace.jsonl")
-    summary = {
-        "cases": len(candidates),
-        "rounds": len(trace),
-        "lean_rescue": sum(1 for row in trace if row.get("round_status") == "lean_rescue"),
-        "model_rescue_no_lean": sum(1 for row in trace if row.get("round_status") == "model_rescue_no_lean"),
-        "wrapped_or_lean_rescue": sum(1 for row in trace if row.get("round_status") == "wrapped_or_lean_rescue"),
-        "too_obvious_rounds": sum(1 for row in trace if row.get("round_status") == "too_obvious"),
-        "lean_missed": sum(1 for row in trace if row.get("round_status") == "lean_missed"),
-        "lean_weaker_than_baseline": sum(1 for row in trace if row.get("round_status") == "lean_weaker_than_baseline"),
-        "hacker_failed": sum(1 for row in trace if row.get("round_status") == "hacker_failed"),
-        "target_lean_rescues": args.target_lean_rescues,
-        "output": str(run_dir),
-    }
-    write_json(summary, run_dir / "summary.json")
-    write_markdown_report(trace, summary, run_dir / "report.md")
+    summary = write_run_progress(
+        trace,
+        cases=len(candidates),
+        target_lean_rescues=args.target_lean_rescues,
+        run_dir=run_dir,
+    )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print(f"Run directory: {run_dir}")
 

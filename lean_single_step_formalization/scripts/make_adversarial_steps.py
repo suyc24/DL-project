@@ -19,6 +19,10 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from llm_client import LLMCallError, call_llm
 
 JSON_BLOCK_RE = re.compile(r"```\s*(?:json)?\s*\n(.*?)```", re.I | re.S)
+STEP_BLOCK_RE = re.compile(
+    r"(\[Step\s+(\d+)\]\s*)(.*?)(?=\n\n\[Step\s+\d+\]|\n\n\[Final Answer\]|\Z)",
+    re.I | re.S,
+)
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -82,16 +86,18 @@ def build_hacker_prompt(candidate: dict[str, Any]) -> str:
         f"{step['step_id']}. {'[目标] ' if step.get('is_selected') else ''}{step['text']}"
         for step in candidate.get("context_steps", [])
     )
+    full_cot = candidate.get("original_cot") or "(none)"
     score = candidate.get("selection_score") or {}
     return (
         f"题目：\n{candidate['question']}\n\n"
-        f"CoT 上下文：\n{context or '(none)'}\n\n"
+        f"完整 CoT：\n{full_cot}\n\n"
+        f"局部 CoT 窗口：\n{context or '(none)'}\n\n"
         f"目标步骤序号：{candidate['step_id']}\n"
         f"目标步骤原文：\n{candidate['target_step']}\n\n"
         f"模型最终答案：\n{candidate.get('model_final_answer') or candidate.get('final_answer') or '(unknown)'}\n\n"
         f"标准答案：\n{candidate.get('gold_answer') or '(unknown)'}\n\n"
         f"步骤风险评分：\n{json.dumps(score, ensure_ascii=False, indent=2)}\n\n"
-        "请生成一个隐蔽的 flawed_step。"
+        "请生成一个隐蔽的错误版本，返回完整 modified_cot，并用 flawed_step 指出其中哪一步需要被评测。"
     )
 
 
@@ -118,9 +124,15 @@ def mock_attack(candidate: dict[str, Any], idx: int) -> dict[str, Any]:
             break
     if flawed == original:
         flawed = original.rstrip("。") + "，并且该结论在所有相关情形下都自动成立。"
+    target_step_id = int(candidate["step_id"])
+    modified_cot = replace_steps_in_cot(
+        candidate,
+        {"flawed_step": flawed, "modified_steps": [{"step_id": target_step_id, "text": flawed}]},
+    )
     return {
         "attackable": True,
-        "flawed_step": flawed,
+        "flawed_step": target_step_id,
+        "modified_cot": modified_cot,
         "flaw_type": flaw_type,
         "why_invalid": why,
         "corrected_step": original,
@@ -137,27 +149,38 @@ def validate_attack(record: dict[str, Any]) -> list[str]:
         errors.append("attackable must be boolean")
     if record.get("attackable") is False:
         return errors
-    allowed_flaws = {
-        "missing_premise",
-        "too_strong",
-        "algebra_error",
-        "inequality_direction",
-        "quantifier_swap",
-        "modular_condition",
-        "boundary_case",
-        "necessity_sufficiency",
-    }
-    if record.get("flaw_type") not in allowed_flaws:
-        errors.append("invalid flaw_type")
-    for key in ["flawed_step", "why_invalid", "corrected_step", "stealth_strategy", "expected_lean_signal"]:
-        if not isinstance(record.get(key), str) or not record.get(key, "").strip():
-            errors.append(f"{key} must be non-empty string")
-    if not isinstance(record.get("changed_elements"), list):
+    try:
+        flawed_step = int(record.get("flawed_step"))
+        if flawed_step < 1:
+            errors.append("flawed_step must be positive integer")
+    except Exception:
+        errors.append("flawed_step must be integer")
+    if not isinstance(record.get("modified_cot"), str) or not record.get("modified_cot", "").strip():
+        errors.append("modified_cot must be non-empty string")
+    if not isinstance(record.get("why_invalid"), str) or not record.get("why_invalid", "").strip():
+        errors.append("why_invalid must be non-empty string")
+    if "modified_steps" in record:
+        if not isinstance(record.get("modified_steps"), list):
+            errors.append("modified_steps must be list")
+        else:
+            for idx, item in enumerate(record.get("modified_steps") or []):
+                if not isinstance(item, dict):
+                    errors.append(f"modified_steps[{idx}] must be object")
+                    continue
+                try:
+                    int(item.get("step_id"))
+                except Exception:
+                    errors.append(f"modified_steps[{idx}].step_id must be integer")
+                if not isinstance(item.get("text"), str) or not item.get("text", "").strip():
+                    errors.append(f"modified_steps[{idx}].text must be non-empty string")
+    if "changed_elements" in record and not isinstance(record.get("changed_elements"), list):
         errors.append("changed_elements must be list")
     if "difficulty_for_judge" in record:
         difficulty_keys = ["difficulty_for_judge"]
-    else:
+    elif "difficulty_for_baseline" in record or "difficulty_for_lean_assisted" in record:
         difficulty_keys = ["difficulty_for_baseline", "difficulty_for_lean_assisted"]
+    else:
+        difficulty_keys = []
     for key in difficulty_keys:
         try:
             difficulty = int(record.get(key))
@@ -168,43 +191,106 @@ def validate_attack(record: dict[str, Any]) -> list[str]:
     return errors
 
 
-def replace_target_context(candidate: dict[str, Any], flawed_step: str) -> list[dict[str, Any]]:
+def replacement_steps(attack: dict[str, Any]) -> dict[int, str]:
+    replacements: dict[int, str] = {}
+    for item in attack.get("modified_steps") or []:
+        try:
+            replacements[int(item.get("step_id"))] = str(item.get("text", "")).strip()
+        except Exception:
+            continue
+    return {step_id: text for step_id, text in replacements.items() if text}
+
+
+def attack_step_id(candidate: dict[str, Any], attack: dict[str, Any]) -> int:
+    try:
+        return int(attack.get("flawed_step"))
+    except Exception:
+        return int(candidate["step_id"])
+
+
+def extract_step_text(cot: str, step_id: int) -> str:
+    for match in STEP_BLOCK_RE.finditer(cot or ""):
+        if int(match.group(2)) == step_id:
+            return match.group(3).strip()
+    return ""
+
+
+def attack_step_text(candidate: dict[str, Any], attack: dict[str, Any]) -> str:
+    step_id = attack_step_id(candidate, attack)
+    mutated_cot = replace_steps_in_cot(candidate, attack)
+    extracted = extract_step_text(mutated_cot, step_id)
+    if extracted:
+        return extracted
+    flawed_step = attack.get("flawed_step")
+    if isinstance(flawed_step, str) and flawed_step.strip() and not flawed_step.strip().isdigit():
+        return flawed_step.strip()
+    return str(candidate.get("target_step", "")).strip()
+
+
+def replace_target_context(candidate: dict[str, Any], attack: dict[str, Any]) -> list[dict[str, Any]]:
+    target_step_id = attack_step_id(candidate, attack)
+    flawed_step = attack_step_text(candidate, attack)
+    extra_replacements = replacement_steps(attack)
     replaced = []
     for step in candidate.get("context_steps", []):
         row = dict(step)
-        if row.get("is_selected"):
+        if int(row.get("step_id")) == target_step_id:
             row["original_text"] = row.get("text")
             row["text"] = flawed_step
+            row["is_selected"] = True
+        elif int(row.get("step_id")) in extra_replacements:
+            row["original_text"] = row.get("text")
+            row["text"] = extra_replacements[int(row.get("step_id"))]
+            row["is_selected"] = False
+        else:
+            row["is_selected"] = False
         replaced.append(row)
     return replaced
 
 
-def replace_target_in_cot(original_cot: str, original_step: str, flawed_step: str) -> str:
-    if original_cot and original_step in original_cot:
-        return original_cot.replace(original_step, flawed_step, 1)
-    return original_cot
+def replace_steps_in_cot(candidate: dict[str, Any], attack: dict[str, Any]) -> str:
+    if isinstance(attack.get("modified_cot"), str) and attack.get("modified_cot", "").strip():
+        return attack["modified_cot"].strip()
+    mutated = candidate.get("original_cot", "")
+    if not mutated:
+        return mutated
+    replacements = replacement_steps(attack)
+    flawed_step = attack.get("flawed_step")
+    if isinstance(flawed_step, str) and flawed_step.strip() and not flawed_step.strip().isdigit():
+        replacements[int(candidate["step_id"])] = flawed_step.strip()
+
+    def replace_match(match: re.Match[str]) -> str:
+        step_id = int(match.group(2))
+        if step_id not in replacements:
+            return match.group(0)
+        return f"{match.group(1)}{replacements[step_id]}"
+
+    return STEP_BLOCK_RE.sub(replace_match, mutated)
 
 
 def build_invalid_row(candidate: dict[str, Any], attack: dict[str, Any], sample_index: int) -> dict[str, Any]:
-    attack_id = f"{candidate['id']}_c{candidate['chain_id']}_s{candidate['step_id']}_adv{sample_index}"
-    flawed_step = attack["flawed_step"].strip()
-    original_step = candidate["target_step"]
+    target_step_id = attack_step_id(candidate, attack)
+    attack_id = f"{candidate['id']}_c{candidate['chain_id']}_s{target_step_id}_adv{sample_index}"
+    flawed_step = attack_step_text(candidate, attack)
+    original_step = extract_step_text(candidate.get("original_cot", ""), target_step_id) or candidate["target_step"]
+    mutated_cot = replace_steps_in_cot(candidate, attack)
     return {
         **candidate,
         "id": safe_id(attack_id),
         "source_id": candidate["id"],
         "source_chain_id": candidate["chain_id"],
-        "source_step_id": candidate["step_id"],
+        "source_step_id": target_step_id,
+        "step_id": target_step_id,
         "adversarial": True,
         "gold_verdict": "invalid",
-        "gold_issue_type": attack["flaw_type"],
+        "gold_issue_type": attack.get("flaw_type", "adversarial_flaw"),
         "gold_diagnosis": attack["why_invalid"],
-        "gold_corrected_step": attack["corrected_step"],
+        "gold_corrected_step": attack.get("corrected_step", original_step),
         "target_step": flawed_step,
         "original_target_step": original_step,
-        "context_steps": replace_target_context(candidate, flawed_step),
+        "context_steps": replace_target_context(candidate, attack),
         "original_cot": candidate.get("original_cot", ""),
-        "mutated_cot": replace_target_in_cot(candidate.get("original_cot", ""), original_step, flawed_step),
+        "mutated_cot": mutated_cot,
         "attack": attack,
     }
 
@@ -301,7 +387,7 @@ def main() -> None:
     parser.add_argument("--reasoning", choices=["auto", "enabled", "disabled"], default="auto")
     parser.add_argument("--openai-reasoning-effort", choices=["high", "max"], default=None)
     parser.add_argument("--codex-reasoning-effort", default="high")
-    parser.add_argument("--codex-sandbox", default="read-only")
+    parser.add_argument("--codex-sandbox", default="danger-full-access")
     parser.add_argument("--codex-cwd", default=str(ROOT.parent))
     parser.add_argument("--codex-thread-id", default=None, help="resume one existing Codex session UUID for all hacker calls")
     parser.add_argument("--codex-thread-dir", default=None, help="store one Codex session UUID file per candidate")

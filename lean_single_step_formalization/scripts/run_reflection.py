@@ -273,7 +273,7 @@ def main() -> None:
     parser.add_argument("--reasoning", choices=["auto", "enabled", "disabled"], default="auto")
     parser.add_argument("--openai-reasoning-effort", choices=["high", "max"], default=None)
     parser.add_argument("--codex-reasoning-effort", default="high")
-    parser.add_argument("--codex-sandbox", default="read-only")
+    parser.add_argument("--codex-sandbox", default="danger-full-access")
     parser.add_argument("--codex-cwd", default=str(ROOT.parent))
     args = parser.parse_args()
 

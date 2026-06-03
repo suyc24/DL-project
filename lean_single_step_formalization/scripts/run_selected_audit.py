@@ -107,7 +107,7 @@ def main() -> None:
         or os.environ.get("CODEX_REASONING_EFFORT")
         or cfg_get(config, "llm.codex_reasoning_effort", "high")
     )
-    codex_sandbox = args.codex_sandbox or os.environ.get("CODEX_SANDBOX") or cfg_get(config, "llm.codex_sandbox", "read-only")
+    codex_sandbox = args.codex_sandbox or os.environ.get("CODEX_SANDBOX") or cfg_get(config, "llm.codex_sandbox", "danger-full-access")
     codex_cwd = args.codex_cwd or cfg_get(config, "llm.codex_cwd", str(ROOT.parent))
 
     run_dir = RUNS_DIR / args.run_id

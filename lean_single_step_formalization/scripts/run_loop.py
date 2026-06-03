@@ -1376,7 +1376,7 @@ def main() -> None:
         or os.environ.get("CODEX_REASONING_EFFORT")
         or cfg_get(config, "llm.codex_reasoning_effort", "high")
     )
-    codex_sandbox = args.codex_sandbox or os.environ.get("CODEX_SANDBOX") or cfg_get(config, "llm.codex_sandbox", "read-only")
+    codex_sandbox = args.codex_sandbox or os.environ.get("CODEX_SANDBOX") or cfg_get(config, "llm.codex_sandbox", "danger-full-access")
     codex_cwd = args.codex_cwd or cfg_get(config, "llm.codex_cwd", str(REPO_ROOT))
     project_dir = args.project_dir or cfg_get(config, "paths.lean_project_dir", default_lean_project_dir())
     lean_timeout = args.lean_timeout if args.lean_timeout is not None else int(cfg_get(config, "lean.timeout", 120))

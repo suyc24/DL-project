@@ -154,26 +154,10 @@ def build_user_prompt(row: dict[str, Any], mode: str, evidence: dict[str, Any]) 
 
 def validate_judgment(record: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if record.get("verdict") not in {"valid", "invalid", "uncertain"}:
+    if record.get("verdict") not in {"valid", "invalid"}:
         errors.append("invalid verdict")
-    allowed_issues = {
-        "none",
-        "missing_premise",
-        "too_strong",
-        "algebra_error",
-        "inequality_direction",
-        "quantifier_swap",
-        "modular_condition",
-        "boundary_case",
-        "necessity_sufficiency",
-        "formalization_issue",
-        "other",
-    }
-    if record.get("issue_type") not in allowed_issues:
-        errors.append("invalid issue_type")
-    for field in ["reason", "suggested_revision"]:
-        if not isinstance(record.get(field), str):
-            errors.append(f"{field} must be string")
+    if not isinstance(record.get("reason"), str) or not record.get("reason", "").strip():
+        errors.append("reason must be non-empty string")
     try:
         confidence = int(record.get("confidence"))
         if confidence < 1 or confidence > 5:
@@ -189,7 +173,7 @@ def fallback_judgment(mode: str, row: dict[str, Any], evidence: dict[str, Any], 
         if issue in {"global_axiom", "missing_hypothesis", "placeholder_prop"}:
             verdict = "invalid"
         elif issue in {"compile_error", "generation_failed"}:
-            verdict = "uncertain"
+            verdict = "invalid"
         else:
             verdict = "valid"
         issue_map = {
@@ -208,7 +192,7 @@ def fallback_judgment(mode: str, row: dict[str, Any], evidence: dict[str, Any], 
             "confidence": 2,
         }
     return {
-        "verdict": "uncertain",
+        "verdict": "invalid",
         "issue_type": "other",
         "reason": f"自动保底判断：{reason}。",
         "suggested_revision": row.get("target_step", ""),
@@ -221,11 +205,11 @@ def mock_judgment(mode: str, row: dict[str, Any], evidence: dict[str, Any]) -> d
     if mode == "baseline" and row.get("adversarial"):
         verdict = "valid"
     elif mode == "wrapped_only" and row.get("adversarial"):
-        verdict = "uncertain"
+        verdict = "valid"
     elif mode == "lean_assisted" and evidence.get("lean_summary", {}).get("issue_found"):
         verdict = "invalid"
     else:
-        verdict = gold if gold in {"valid", "invalid"} else "uncertain"
+        verdict = gold if gold in {"valid", "invalid"} else "invalid"
     return {
         "verdict": verdict,
         "issue_type": row.get("gold_issue_type", "none") if verdict == "invalid" else "none",
@@ -282,7 +266,7 @@ def judge_one(
             parsed = fallback_judgment(mode, row, evidence, str(exc))
             errors = [str(exc)]
     gold = row.get("gold_verdict")
-    correct = parsed.get("verdict") == gold if gold in {"valid", "invalid", "uncertain"} else None
+    correct = parsed.get("verdict") == gold if gold in {"valid", "invalid"} else None
     return {
         "id": row.get("id"),
         "chain_id": row.get("chain_id"),
@@ -315,9 +299,6 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
             "valid_accept_rate": (
                 sum(1 for row in valid_rows if row.get("judgment", {}).get("verdict") == "valid") / len(valid_rows)
             ) if valid_rows else None,
-            "uncertain_rate": (
-                sum(1 for row in rows if row.get("judgment", {}).get("verdict") == "uncertain") / len(rows)
-            ) if rows else None,
             "invalid_json_or_fallback": sum(1 for row in rows if row.get("validation_errors")),
         }
     def result_map(mode: str) -> dict[tuple[Any, Any, Any], dict[str, Any]]:
@@ -376,8 +357,9 @@ def write_report(results: list[dict[str, Any]], summary: dict[str, Any], path: P
             reason = str(judgment.get("reason", "")).replace("\n", " ")
             if len(reason) > 240:
                 reason = reason[:240] + "..."
+            issue = judgment.get("issue_type") or "n/a"
             lines.append(
-                f"- {row['mode']}: {judgment.get('verdict')} / {judgment.get('issue_type')} "
+                f"- {row['mode']}: {judgment.get('verdict')} / {issue} "
                 f"(correct={row.get('correct')}, confidence={judgment.get('confidence')}) - {reason}"
             )
         lines.append("")
@@ -400,7 +382,7 @@ def main() -> None:
     parser.add_argument("--reasoning", choices=["auto", "enabled", "disabled"], default="auto")
     parser.add_argument("--openai-reasoning-effort", choices=["high", "max"], default=None)
     parser.add_argument("--codex-reasoning-effort", default="high")
-    parser.add_argument("--codex-sandbox", default="read-only")
+    parser.add_argument("--codex-sandbox", default="danger-full-access")
     parser.add_argument("--codex-cwd", default=str(ROOT.parent))
     args = parser.parse_args()
 

@@ -307,7 +307,7 @@ def call_llm(
     reasoning: bool | None = None,
     openai_reasoning_effort: str | None = None,
     codex_reasoning_effort: str = "high",
-    codex_sandbox: str = "read-only",
+    codex_sandbox: str = "danger-full-access",
     codex_cwd: str | None = None,
     codex_thread_id: str | None = None,
     codex_thread_file: str | None = None,
