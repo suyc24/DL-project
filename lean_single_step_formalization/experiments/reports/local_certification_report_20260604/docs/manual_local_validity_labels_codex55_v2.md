@@ -1,0 +1,1 @@
+../../manual_local_validity_labels_codex55_v2.md

@@ -1,0 +1,1 @@
+../../../../scripts/run_adversarial_game_gv_v2.py
