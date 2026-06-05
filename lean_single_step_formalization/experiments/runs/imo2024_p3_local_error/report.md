@@ -20,37 +20,7 @@ The intended workflow was:
 
 The experiment deliberately avoided web search. The sub-agents were instructed not to browse or query external sources.
 
-## 2. Infrastructure
-
-The experiment followed the style of `lean_single_step_formalization`, rather than the older `lean_single_step_formalization_v1` flow.
-
-Local Lean project:
-
-```text
-/home/suyc24/Python/DL-project/lean_fhis
-```
-
-Experiment directory:
-
-```text
-/home/suyc24/Python/DL-project/lean_single_step_formalization/experiments/runs/imo2024_p3_local_error
-```
-
-Remote Lean host requested by the user:
-
-```text
-ssh -p 36685 root@connect.westd.seetacloud.com
-```
-
-The remote host initially did not have Lean available. A minimal standalone Lean 4.30 runtime was prepared and transferred to:
-
-```text
-/root/autodl-tmp/lean-4.30.0-linux/bin/lean
-```
-
-All final local-error Lean files compiled both locally and remotely.
-
-## 3. Iteration Log
+## 2. Iteration Log
 
 ### Iteration 1: Pointwise Finite vs Uniformly Bounded
 
@@ -236,7 +206,7 @@ Feedback returned to the solver:
 
 This prevented a polished but invalid extremal argument from being accepted.
 
-## 4. Final Successful Proof Strategy
+## 3. Final Successful Proof Strategy
 
 After the local feedback loop, the solver abandoned the fragile synchronization and repeated-block arguments. The final proof used a sorting dynamics on recurrent counters.
 
@@ -325,7 +295,7 @@ a_2, a_4, a_6, ...
 
 is eventually periodic.
 
-## 5. Final Verification Result
+## 4. Final Verification Result
 
 The final sorting-dynamics proof was sent to an independent GPT-5.5 auditor with instructions:
 
@@ -348,7 +318,7 @@ Additional local random stress tests were run on the abstract ranking dynamics. 
 
 These tests are not a proof, but they helped catch earlier false proof ideas and increased confidence before the final auditor pass.
 
-## 6. Why This Is a Good Example for the Method
+## 5. Why This Is a Good Example for the Method
 
 This experiment shows the value of local formal feedback in exactly the intended way.
 
@@ -368,7 +338,7 @@ This supports the proposed story:
 
 > A strong LLM may initially stop at a convincing but false proof. A local verifier does not need to solve the whole problem; it only needs to invalidate the fragile step. Repeated local invalidation can steer the solver away from shallow proof patterns and toward a genuinely stable argument.
 
-## 7. Takeaways for the Pipeline
+## 6. Takeaways for the Pipeline
 
 This example suggests the following design principles for the full system:
 
